@@ -1,0 +1,229 @@
+Guilherme Machado de Bragança Soares - 2410804
+João Pedro Capechi Telhado - 
+
+1) Faça um programa para criar dois processos, o pai escreve seu pid e espera o filho terminar e o filho escreve o seu pid e termina.
+------------------------------------------------------------------------
+ARQUIVO ex1.c
+
+#include <sys/types.h>
+#include <unistd.h>
+#include <sys/wait.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+int main() {
+    int mypid, pid, status;
+    pid = fork();
+    if (pid != 0) {
+        // Pai
+        mypid = getpid();
+        printf("PID pai: %d\n", mypid);
+        waitpid(-1, &status, 0);
+    }
+    else {
+        // Filho
+        mypid = getpid();
+        printf("PID filho: %d\n", mypid);
+        exit(3);
+    }
+    return 0;
+}
+------------------------------------------------------------------------
+COMPILAÇÃO E EXECUÇÃO
+
+$ gcc -Wall -o ex-1 ex-1.c
+$ ./ex-1
+------------------------------------------------------------------------
+RESULTADO
+
+PID pai: 4084
+PID filho: 4085
+------------------------------------------------------------------------
+CONCLUSÃO
+
+O código inicia declarando as variáveis e, como estão antes do fork, serão utilizadas por ambos os processos. Dessa forma, o pai faz o fork, guardando seu retorno (o process id do filho gerado) na variável pid.
+Contudo, no fork o processo do filho é criado e, para este, ele é o processo inicial. Ou seja, no referencial do filho, seu pid é 0.
+Assim, o código do filho (que assume todo o contexto do pai, ou seja, todo o processo que rodou antes do fork) recebe 0 em pid ao rodar a linha do fork e passa pela condicional no caso else.
+Na condicional, a variável declarada "mypid" recebe o valor da função getpid(), que é o pid "real" do seu processo (e não o em seu referencial).
+Com isso, a saída mostra-se coerente, pois o pid do pai é diferente do pid do filho. E como provavelmente nenhum processo rodou no computador neste ínterim, eles ficaram como números sucessivos.
+------------------------------------------------------------------------
+
+
+2) Agora, usando a mesma estrutura de processos pai e filho, declare uma
+variável visível ao pai e ao filho, no pai inicialize a variável com 1 e imprima seu valor antes do fork(). No filho, altere o valor da variável para 5 e imprima o seu valor antes do exit(). Agora, no pai, imprima novamente o valor da variável após o filho ter alterado a variável - após a waitpid(). Justifique os resultados obtidos.
+------------------------------------------------------------------------
+ARQUIVO ex2.c
+
+#include <sys/types.h>
+#include <unistd.h>
+#include <sys/wait.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+int main() {
+    int mypid, pid, status;
+    
+    int var = 1;
+    printf("Var: %d\n", var);
+
+    pid = fork();
+    if (pid != 0) {
+        // Pai
+        mypid = getpid();
+        printf("PID pai: %d\n", mypid);
+        waitpid(-1, &status, 0);
+        printf("Var: %d\n", var);
+    }
+    else {
+        // Filho
+        mypid = getpid();
+        printf("PID filho: %d\n", mypid);
+        var = 5;
+        printf("Var: %d\n", var);
+        exit(3);
+    }
+    return 0;
+}
+------------------------------------------------------------------------
+COMPILAÇÃO E EXECUÇÃO
+
+$ gcc -Wall -o ex-2 ex-2.c
+$ ./ex-2
+------------------------------------------------------------------------
+RESULTADO
+
+Var: 1
+Var: 5
+Var: 1
+------------------------------------------------------------------------
+CONCLUSÃO
+
+Como explicado na questão 1, após o fork o processo do filho recebe todo o contexto do que foi realizado até esta linha. Ou seja, quando se faz o fork, há uma cópia das variáveis no outro espaço da memória do processo filho. Logo, quando o filho modifica o valor da variável, o pai não recebe essa alteração por estarem em locais distintos e independentes.
+------------------------------------------------------------------------
+
+
+3) Use o programa anterior para ler e ordenar um vetor de 10 posições. O filho ordena o vetor e o pai exibe os dados do vetor antes do fork() e depois do waitpid(). Eles usarão o mesmo vetor na memória? Justifique.
+------------------------------------------------------------------------
+ARQUIVO ex3.c
+
+#include <sys/types.h>
+#include <unistd.h>
+#include <sys/wait.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+#define SIZE 10
+
+int main() {
+    int mypid, pid, status;
+    
+    int var[] = {23, 5, 10, 99, 80, 4, 45, 68, 50, 33};
+    
+    printf("Pai (antes do fork): {");
+    for (int i = 0; i < SIZE; i++) printf("%d, ", var[i]);
+    printf("}\n");
+
+    pid = fork();
+    if (pid != 0) {
+        // Pai
+        waitpid(-1, &status, 0);
+        
+        printf("Pai (depois do waitpid): {");
+        for (int i = 0; i < SIZE; i++) printf("%d, ", var[i]);
+        printf("}\n");
+    }
+    else {
+        // Filho
+        char has_changes = 1;
+        while (has_changes) {
+            has_changes = 0;
+            for (int i = 0; i < SIZE - 1; i++) {
+                if (var[i] > var[i+1]) {
+                    has_changes = 1;
+                    int tmp = var[i];
+                    var[i] = var[i+1];
+                    var[i+1] = tmp;
+                }
+            }
+        }
+
+        
+        printf("Filho: {");
+        for (int i = 0; i < SIZE; i++) printf("%d, ", var[i]);
+        printf("}\n");
+
+        exit(3);
+    }
+    return 0;
+}
+------------------------------------------------------------------------
+COMPILAÇÃO E EXECUÇÃO
+
+$ gcc -Wall -o ex-3 ex-3.c
+$ ./ex-3
+------------------------------------------------------------------------
+RESULTADO
+Pai (antes do fork): {23, 5, 10, 99, 80, 4, 45, 68, 50, 33, }
+Filho: {4, 5, 10, 23, 33, 45, 50, 68, 80, 99, }
+Pai (depois do waitpid): {23, 5, 10, 99, 80, 4, 45, 68, 50, 33, }
+------------------------------------------------------------------------
+CONCLUSÃO
+
+Há um print do vetor no processo do filho para visualizar que, de fato, o vetor está sendo alterado (e até ordenado, no caso). Porém, como explicado na questão 2, quando se cria um fork novas instâncias das variáveis são criadas na memória, fazendo com que as alterações no processo do filho não afetem o ambiente do pai (que permanece com o vetor desordenado).
+------------------------------------------------------------------------
+
+
+4) Modifique o programa anterior para que o filho execute um programa elaborado por você, que mande imprimir uma mensagem qualquer no vídeo, por exemplo, “alo mundo”. Em seguida altere o programa do item 4 para o filho executar o programa echo da shell.
+------------------------------------------------------------------------
+ARQUIVO ex3.c
+
+#include <sys/types.h>
+#include <unistd.h>
+#include <sys/wait.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+#define SIZE 10
+
+int main() {
+    int mypid, pid, status;
+
+    pid = fork();
+    if (pid != 0) {
+        // Pai
+        waitpid(-1, &status, 0);
+    }
+    else {
+        // Filho
+
+        // Parte 1
+        char* args[] = {"./helloWorld", NULL};
+        execvp(args[0], args);
+
+        // Parte 2
+        // char* args[] = {"echo", "Oi mundo", NULL};
+        // execvp(args[0], args);
+
+        exit(3);
+    }
+    return 0;
+}
+------------------------------------------------------------------------
+COMPILAÇÃO E EXECUÇÃO
+
+Para cada parte individual dessa questão, basta descomentar a parte desejada e comentar a outra. Depois, compilar e executar o código:
+
+$ gcc -Wall -o ex-4 ex-4.c
+$ ./ex-4
+------------------------------------------------------------------------
+RESULTADO (PARTE 1)
+    Programa elaborado por nós: 
+    Hello World
+
+RESULTADO (PARTE 2)
+    Programa da shell:
+    Oi mundo
+------------------------------------------------------------------------
+CONCLUSÃO
+
+Utilizando o execvp, é possível executar tanto um binário local (Parte 1) quanto um comando padrão da shell (Parte 2), o que permite o processo filho invocar programas externos. O código que elaboramos é um "Hello World" (vide o arquivo helloWorld.c) e é chamado na parte 1. Já na parte 2, foi decidido printar no terminal o texto "Oi mundo", o qual também apareceu.
