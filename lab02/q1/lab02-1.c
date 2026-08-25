@@ -9,10 +9,14 @@
 
 
 #define LINHAS 4
-#define COLUNAS 3
+#define COLUNAS 5
 
 int main() {
-    int segmento1, segmento2, segmento3, id, pid, status, *mat1, *mat2, *mat3;
+    // Matriz
+    int segmento1, segmento2, segmento3, *mat1, *mat2, *mat3;
+    // Processos / forks
+    int status;
+
     // aloca a memória compartilhada
     segmento1 = shmget (IPC_PRIVATE, (sizeof(int) * LINHAS * COLUNAS), IPC_CREAT | IPC_EXCL | S_IRUSR | S_IWUSR);
     segmento2 = shmget (IPC_PRIVATE, (sizeof(int) * LINHAS * COLUNAS), IPC_CREAT | IPC_EXCL | S_IRUSR | S_IWUSR);
@@ -45,34 +49,37 @@ int main() {
     }
     printf("\n");
 
-    mat3 = (int *) shmat (segmento3, 0, 0); // comparar o retorno com -1
+    mat3 = (int *) shmat(segmento3, 0, 0); // comparar o retorno com -1
     for (int i = 0; i < LINHAS; i++)
         for (int j = 0; j < COLUNAS; j++)
             *(mat3 + i*COLUNAS + j) = 0;
 
-    printf("Matriz 3 (soma das anteriores):\n");
+
+    pid_t pids[LINHAS];
     for (int linha = 0; linha < LINHAS; linha++)
     {
-        if ((id = fork()) < 0)
+        if ((pids[linha] = fork()) < 0)
         {
             puts("Erro");
             exit(-2);
         }
-        else if (id == 0)
+        else if (pids[linha] == 0)
         {
             for (int j = 0; j < COLUNAS; j++)
                 *(mat3 + linha*COLUNAS + j) = *(mat2 + linha*COLUNAS + j) + *(mat1 + linha*COLUNAS + j);
             exit(2);
-        }
-        else
-        {
-            pid = wait(&status);
-            for (int j = 0; j < COLUNAS; j++)
-            {
-                printf("%02d ", *(mat3 + linha*COLUNAS + j));
-                if (j == 2) printf("\n");
-            }
-        }
+        }   
+    }
+
+    for (int i = 0; i < LINHAS; i++)
+        waitpid(pids[i], &status, 0);
+
+    printf("Matriz 3 (soma das anteriores):\n");
+    for (int i = 0; i < LINHAS; i++)
+    {
+        for (int j = 0; j < COLUNAS; j++)
+            printf("%02d ", *(mat3 + i*COLUNAS + j));
+        printf("\n");
     }
 
     // libera a memória compartilhada do processo
@@ -84,5 +91,6 @@ int main() {
     shmctl (segmento1, IPC_RMID, 0);
     shmctl (segmento2, IPC_RMID, 0);
     shmctl (segmento3, IPC_RMID, 0);
+    
     return 0;
 }
