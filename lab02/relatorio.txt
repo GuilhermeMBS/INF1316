@@ -1,0 +1,25 @@
+1) Soma de matrizes
+Faça um programa para somar matrizes de acordo
+com o seguinte algoritmo
+    - O primeiro processo irá criar duas matrizes preenchidas e uma terceira vazia em 3 áreas de memória compartilhada.
+    - Para cada linha da matriz solução, o seu programa deverá gerar um processo para o seu cálculo.
+OBS: implemente as matrizes como vetores de tamanho (linha x coluna) e aloque a shared memory para os vetores correspondentes, pois acessar os elementos (i,j) é complexo.
+
+2) Mensagem do Dia
+    - Faça um programa que:
+        - Leia uma mensagem do dia do stdin (ou arquivo)
+        - Crie uma memória compartilhada com a chave 8752
+        - Salve a mensagem na memória
+    - Faça um outro programa “cliente” que utilize a mesma chave (8752) e exiba a mensagem do dia para o usuário
+
+3) Busca paralela em vetor
+    - Faça um programa paralelo (com pelo menos 4 processos) para localizar uma chave em um vetor.
+    - Crie uma memória compartilhada com dados numéricos inteiros e desordenados e a divida pelo número de processos
+    - Cada processo deve procurar o dado na sua área de memória e informar a posição onde o dado foi localizado.
+
+4) Multiplicação multi-processo
+Faça um programa que:
+    - Tenha um processo pai que abre dois blocos de memória compartilhada, m1 e m2.
+    - cria dois processos filho (use exec), P1 e P2: estes também fazem attach em m1 ou m2 respectivamente
+    - Cada um dá um sleep() randômico e escreve um valor int na área compartilhada dele, e avisa o processo pai que um novo valor foi gerado, escrevendo tb um nr de sequencia
+    - O pai fica em loop verificando se houve um novo valor. Apenas quando ambos P1 e P2 geraram um novo valor, o pai imprime o produto dos valores gerados por P1 e P2
