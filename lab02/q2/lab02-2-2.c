@@ -8,32 +8,30 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-int main() {
-    char msgDia[101];
-    printf("Digite a mensagem do dia (até 100 caractéres): ");
-    scanf("%s", msgDia);
 
+int main() {
     int segmento;
     char* memoria = NULL;
 
-    segmento = shmget(8752, sizeof(msgDia), IPC_CREAT | S_IRUSR | S_IWUSR);
-    if (segmento == -1)
-    {
+    segmento = shmget(8752, sizeof(char) * 4096, S_IRUSR | S_IWUSR);
+    if (segmento == -1) {
         puts("Erro ao alocar memória");
         return 0;
     }
 
-    memoria = (char*) shmat(segmento, 0, 0);
-    if (memoria == (void*)-1)
-    {
-        puts("Erro ao attach memória");
+    memoria = (char*)shmat(segmento, 0, 0);
+    if (memoria == (void*)-1) {
+        puts("Erro ao dar attach");
         return 0;
     }
 
-    strcpy(memoria, msgDia);
+    printf("Msg armazenada: %s\n", memoria);
 
     // libera a memória compartilhada do processo
     shmdt(memoria);
+
+    // libera a memória compartilhada
+    shmctl (segmento, IPC_RMID, 0);
 
     return 0;
 }

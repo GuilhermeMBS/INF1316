@@ -1,6 +1,6 @@
 #pragma once
 
-typedef struct Dado {
+typedef struct dado {
     int valor;
     int seq;
 } Dado;

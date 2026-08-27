@@ -1,0 +1,24 @@
+# 1. Ignora todos os arquivos na raiz
+/*
+
+# 2. Permite rastrear pastas
+!/**/
+
+# 3. Permite arquivos de código, headers e documentação
+!*.c
+!*.h
+!Makefile
+!makefile
+!README*
+!.gitignore
+
+# 4. Artefatos adicionais de compilação
+*.o
+*.out
+*.exe
+*.so
+*.a
+*.dSYM/
+
+# Minha pasta
+studies/
