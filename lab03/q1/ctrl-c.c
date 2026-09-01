@@ -2,12 +2,7 @@
 * 1) Execute o programa “ctrl-c.c”.
 * Digite Ctrl-C e Ctrl-\. Analise o resultado.
 */
-
-// #include <sys/ipc.h>
-// #include <sys/shm.h>
-// #include <sys/stat.h>
 #include <unistd.h>
-// #include <sys/wait.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <signal.h>
