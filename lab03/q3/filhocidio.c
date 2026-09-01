@@ -2,6 +2,7 @@
 * 3) Execute e explique o funcionamento de filhocidio.c.
 */
 #include <unistd.h>
+#include <sys/wait.h>
 #include <signal.h>
 
 #include <stdlib.h>
@@ -21,7 +22,10 @@ int main (int argc, char *argv[])
         exit(-1);
     }
     if (pid == 0) /* child */
-        execve(argv[2], 0, 0); /* ou sleep(3);*/
+    {
+        char* args[] = {argv[2], NULL};
+        execve(argv[2], args, 0); /* ou sleep(3);*/
+    }
     else /* parent */
     {
         sscanf(argv[1], "%d", &delay); /* read delay from command line */
