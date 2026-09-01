@@ -1,0 +1,508 @@
+Guilherme Machado de Bragança Soares - 2410804
+João Pedro Capechi Telhado - 
+
+1) Soma de matrizes:
+Faça um programa para somar matrizes de acordo com o seguinte algoritmo:
+    - O primeiro processo irá criar duas matrizes preenchidas e uma terceira vazia em 3 áreas de memória compartilhada.
+    - Para cada linha da matriz solução, o seu programa deverá gerar um processo para o seu cálculo.
+OBS: implemente as matrizes como vetores de tamanho (linha x coluna) e aloque a shared memory para os vetores correspondentes, pois acessar os elementos (i,j) é complexo.
+------------------------------------------------------------------------
+ARQUIVO lab02-1.c
+
+#include <stdio.h>
+#include <stdlib.h>
+
+#include <sys/ipc.h>
+#include <sys/shm.h>
+#include <sys/stat.h>
+#include <sys/wait.h>
+#include <unistd.h>
+
+#define LINHAS 4
+#define COLUNAS 5
+#define DEBUG 0     // Tests if they are parallel processes
+
+int main() {
+    int segmento1, segmento2, segmento3, *mat1, *mat2, *mat3; // Matrices
+    int status; // Processos / forks
+    pid_t pids[LINHAS]; // PID's wait list
+
+    // aloca a memória compartilhada
+    segmento1 = shmget(IPC_PRIVATE, (sizeof(int) * LINHAS * COLUNAS), IPC_CREAT | IPC_EXCL | S_IRUSR | S_IWUSR);
+    segmento2 = shmget(IPC_PRIVATE, (sizeof(int) * LINHAS * COLUNAS), IPC_CREAT | IPC_EXCL | S_IRUSR | S_IWUSR);
+    segmento3 = shmget(IPC_PRIVATE, (sizeof(int) * LINHAS * COLUNAS), IPC_CREAT | IPC_EXCL | S_IRUSR | S_IWUSR);
+
+    // associa a memória compartilhada ao processo
+    mat1 = (int*)shmat(segmento1, 0, 0);
+    mat2 = (int*)shmat(segmento2, 0, 0);
+    mat3 = (int*)shmat(segmento3, 0, 0);
+
+    if ((*mat1 == -1) || (*mat2 == -1) || (*mat3 == -1)) exit(1); // Attachement error
+
+    printf("Matriz 1:\n");
+    for (int i = 0; i < LINHAS; i++) {
+        for (int j = 0; j < COLUNAS; j++) {
+            *(mat1+i*COLUNAS + j) = COLUNAS*i + j + 1;
+            printf("%02d ", *(mat1+i*COLUNAS + j));
+        }
+        printf("\n");
+    }
+    printf("\n");
+
+    printf("Matriz 2:\n");
+    for (int i = 0; i < LINHAS; i++) {
+        for (int j = 0; j < COLUNAS; j++) {
+            *(mat2+i*COLUNAS + j) = 2*(COLUNAS*i + j + 1);
+            printf("%02d ", *(mat2+i*COLUNAS + j));
+        }
+        printf("\n");
+    }
+    printf("\n");
+
+    for (int linha = 0; linha < LINHAS; linha++) {
+        if ((pids[linha] = fork()) < 0) {
+            puts("Fork Error");
+            exit(-2);
+        }
+        else if (pids[linha] == 0) {
+            if (DEBUG) {
+                printf("Process %d beggins...\n", linha);
+                sleep(1);
+            }
+
+            for (int j = 0; j < COLUNAS; j++) {
+                *(mat3 + linha*COLUNAS + j) = *(mat2 + linha*COLUNAS + j) + *(mat1 + linha*COLUNAS + j);
+            }
+
+            if (DEBUG) printf("Process %d ends...\n", linha);           
+            exit(2);
+        }   
+    }
+
+    // Wait for all the parallel processes to finish
+    for (int i = 0; i < LINHAS; i++) waitpid(pids[i], &status, 0);
+
+    printf("Matriz 3 (soma das anteriores):\n");
+    for (int i = 0; i < LINHAS; i++) {
+        for (int j = 0; j < COLUNAS; j++)
+            printf("%02d ", *(mat3 + i*COLUNAS + j));
+        printf("\n");
+    }
+
+    // libera a memória compartilhada do processo
+    shmdt(mat1);
+    shmdt(mat2);
+    shmdt(mat3);
+
+    // libera a memória compartilhada
+    shmctl(segmento1, IPC_RMID, 0);
+    shmctl(segmento2, IPC_RMID, 0);
+    shmctl(segmento3, IPC_RMID, 0);
+    
+    return 0;
+}
+------------------------------------------------------------------------
+COMPILAÇÃO E EXECUÇÃO
+
+$ gcc -Wall -o lab02-1 lab02-1.c
+$ ./lab02-1
+------------------------------------------------------------------------
+RESULTADO
+
+Matriz 1:
+01 02 03 04 05 
+06 07 08 09 10 
+11 12 13 14 15 
+16 17 18 19 20 
+
+Matriz 2:
+02 04 06 08 10 
+12 14 16 18 20 
+22 24 26 28 30 
+32 34 36 38 40 
+
+Matriz 3 (soma das anteriores):
+03 06 09 12 15 
+18 21 24 27 30 
+33 36 39 42 45 
+48 51 54 57 60
+------------------------------------------------------------------------
+CONCLUSÃO
+
+O código faz alocação de memória compartilhada para cada matriz e guarda seus ponteiros em três diferentes variáveis. Após isto, há a verificação da alocação e, em seguida, as duas primeiras matrizes são geradas: a primeira com uma sequência de números começando em 1, e a segunda com o dobro do valor da primeira.
+Então, um fork é criado dentro de um loop para gerar um processo de cálculo da soma para cada linha da matriz. Há uma flag de DEBUG que usamos para testar se o programa realmente ficava paralelizado desta forma.
+Assim, os cálculos das somas dos elementos das matrizes é feito e o processo pai espera a conclusão de todos eles por meio de uma conferência no array de PID (waitpid no array pids).
+Por fim, toda a memória compartilhada é desacoplada e liberada.
+------------------------------------------------------------------------
+
+
+2) Mensagem do Dia:
+    - Faça um programa que:
+        - Leia uma mensagem do dia do stdin (ou arquivo)
+        - Crie uma memória compartilhada com a chave 8752
+        - Salve a mensagem na memória
+    - Faça um outro programa “cliente” que utilize a mesma chave (8752) e exiba a mensagem do dia para o usuário
+------------------------------------------------------------------------
+ARQUIVO lab02-2-1.c
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include <sys/ipc.h>
+#include <sys/shm.h>
+#include <sys/stat.h>
+#include <sys/wait.h>
+#include <unistd.h>
+
+#define MSG_SIZE 4096
+
+int main() {
+    char msgDia[MSG_SIZE];
+    fgets(msgDia, sizeof(msgDia), stdin);
+    msgDia[strcspn(msgDia, "\n")] = '\0'; // Removes the '\n' at the end
+
+    char* memoria = NULL;
+    int segmento = shmget(8752, sizeof(msgDia), IPC_CREAT | S_IRUSR | S_IWUSR);
+    
+    if (segmento == -1) {
+        puts("Erro ao alocar memória");
+        exit(1);
+    }
+
+    memoria = (char*) shmat(segmento, 0, 0);
+    if (memoria == (void*)-1) {
+        puts("Erro no attach da memória");
+        exit(1);
+    }
+
+    strcpy(memoria, msgDia);
+    shmdt(memoria);
+
+    return 0;
+}
+
+ARQUIVO lab02-2-2.c
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include <sys/ipc.h>
+#include <sys/shm.h>
+#include <sys/stat.h>
+#include <sys/wait.h>
+#include <unistd.h>
+
+
+int main() {
+    int segmento;
+    char* memoria = NULL;
+
+    segmento = shmget(8752, sizeof(char) * 4096, S_IRUSR | S_IWUSR);
+    if (segmento == -1) {
+        puts("Erro ao alocar memória");
+        return 0;
+    }
+
+    memoria = (char*)shmat(segmento, 0, 0);
+    if (memoria == (void*)-1) {
+        puts("Erro ao dar attach");
+        return 0;
+    }
+
+    printf("Msg armazenada: %s\n", memoria);
+
+    // libera a memória compartilhada do processo
+    shmdt(memoria);
+
+    // libera a memória compartilhada
+    shmctl (segmento, IPC_RMID, 0);
+
+    return 0;
+}
+------------------------------------------------------------------------
+COMPILAÇÃO E EXECUÇÃO
+
+Juntei os comandos intercalados com o ipcs -m para verificar a memória alocada:
+$ gcc -Wall -o lab02-2-1 lab02-2-1.c && gcc -Wall -o lab02-2-2 lab02-2-2.c && ./lab02-2-1 && ipcs -m && ./lab02-2-2 && ipcs -m
+------------------------------------------------------------------------
+RESULTADO
+
+Teste de mensagem do dia!
+
+------ Shared Memory Segments --------
+key        shmid      owner      perms      bytes      nattch     status      
+0x00002230 27         guilhermem 600        4096       0                       
+
+Msg armazenada: Teste de mensagem do dia!
+
+------ Shared Memory Segments --------
+key        shmid      owner      perms      bytes      nattch     status      
+
+
+------------------------------------------------------------------------
+CONCLUSÃO
+
+O array da mensagem do dia é declarado e preenchido com um fgets, limpando o \n logo em seguida. Logo após, a memória é alocada em no endereço 8752 e a string posta lá. Isto permite uma persistência entre programas.
+No segundo arquivo, a mesma memória é acessada com o shmget, lida e liberada. A verificação disto é feita com os prints e com o ipcs -m.
+------------------------------------------------------------------------
+
+
+3) Busca paralela em vetor:
+    - Faça um programa paralelo (com pelo menos 4 processos) para localizar uma chave em um vetor.
+    - Crie uma memória compartilhada com dados numéricos inteiros e desordenados e a divida pelo número de processos
+    - Cada processo deve procurar o dado na sua área de memória e informar a posição onde o dado foi localizado.
+------------------------------------------------------------------------
+ARQUIVO lab02-3.c
+
+#include <stdio.h>
+#include <stdlib.h>
+
+#include <sys/ipc.h>
+#include <sys/shm.h>
+#include <sys/stat.h>
+#include <sys/wait.h>
+#include <unistd.h>
+
+#define TAM 10
+#define qtdFilhos 4
+#define DEBUG 0     // Tests if they are parallel processes
+
+
+int main() {
+    int segmento;
+    int* vetor = NULL;
+
+    segmento = shmget(IPC_PRIVATE, sizeof(int) * (TAM + 1), IPC_CREAT | S_IRUSR | S_IWUSR);
+    if (segmento == -1) {
+        puts("Erro ao alocar memória");
+        exit(1);
+    }
+
+    vetor = (int*)shmat(segmento, 0, 0);
+    if (vetor == (void*)-1) {
+        puts("Erro ao dar attach");
+        exit(1);
+    }
+
+    vetor[TAM] = 0; // Flag for the desired value (if it was found)
+    printf("[ ");
+    for (int i = 0; i < TAM; i++) {
+        vetor[i] = rand() % 100;
+        printf("%d ", vetor[i]);
+    }
+    printf("]\n");
+
+    int valorBusca;
+    printf("Digite o valor a buscar: ");
+    scanf("%d", &valorBusca);
+
+    int tamAreaVetor = (TAM + qtdFilhos - 1) / qtdFilhos; // Arredondar para cima a divisão
+    pid_t pids[qtdFilhos];
+
+    for (int i = 0; i < qtdFilhos; i++)
+    {
+        if ((pids[i] = fork()) < 0) {
+            puts("Erro ao criar o filho");
+            exit(-2);
+        }
+        else if (pids[i] == 0) {
+            if (DEBUG) {
+                printf("Process %d beggins...\n", i);
+                sleep(1);
+            }
+
+            for (int pos = 0; pos < tamAreaVetor; pos++) {
+                if (pos + i*tamAreaVetor >= TAM) break;
+
+                if (*(vetor + pos + i*tamAreaVetor) == valorBusca) {
+                    vetor[TAM] = 1;
+                    printf("Valor encontrado no index %d\n", pos + i * tamAreaVetor);
+                }
+            }
+
+            shmdt(vetor);
+
+            if (DEBUG) printf("Process %d ends...\n", i);           
+            exit(2);
+        }
+    }
+
+    for (int i = 0; i < qtdFilhos; i++) waitpid(pids[i], NULL, 0);
+    if (vetor[TAM] == 0) printf("Valor ausente da lista!\n");
+
+    // libera a memória compaprtilhada
+    shmdt(vetor);
+    shmctl (segmento, IPC_RMID, 0);
+    
+    return 0;
+}
+------------------------------------------------------------------------
+COMPILAÇÃO E EXECUÇÃO
+
+$ gcc -Wall -o lab02-3 lab02-3.c
+$ ./lab02-3
+------------------------------------------------------------------------
+RESULTADO
+
+[ 83 86 77 15 93 35 86 92 49 21 ]
+Digite o valor a buscar: 86
+Valor encontrado no index 1
+Valor encontrado no index 6
+------------------------------------------------------------------------
+CONCLUSÃO
+
+O código faz basicamente o que foi feito no primeiro exercício no que tange à alocação de memória e como os processos são paralelizados.
+Um ponto importante de ser explicado é que, para mostrar que um valor não está no vetor, fizemos uma flag de "found" presente como o último elemento dele. Assim ela é vista por todos os processos e pode ser utilizada para printar a mensagem de valor não encontrado.
+------------------------------------------------------------------------
+
+
+4) Multiplicação multi-processo:
+Faça um programa que:
+    - Tenha um processo pai que abre dois blocos de memória compartilhada, m1 e m2.
+    - cria dois processos filho (use exec), P1 e P2: estes também fazem attach em m1 ou m2 respectivamente
+    - Cada um dá um sleep() randômico e escreve um valor int na área compartilhada dele, e avisa o processo pai que um novo valor foi gerado, escrevendo tb um nr de sequencia
+    - O pai fica em loop verificando se houve um novo valor. Apenas quando ambos P1 e P2 geraram um novo valor, o pai imprime o produto dos valores gerados por P1 e P2
+------------------------------------------------------------------------
+ARQUIVO lab02-4-struct.h
+
+#pragma once
+
+typedef struct dado {
+    int valor;
+    int seq;
+} Dado;
+
+Arquivo p1.c
+#include "lab02-4-struct.h"
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
+
+#include <sys/ipc.h>
+#include <sys/shm.h>
+#include <unistd.h>
+
+int main(int argc, char *argv[])
+{
+    if (argc != 2) {
+        printf("Uso: %s <shmid>\n", argv[0]);
+        exit(1);
+    }
+    
+    int segmento = atoi(argv[1]);
+    Dado *dado = (Dado*)shmat(segmento, 0, 0);
+    if (dado == (void*)-1) {
+        puts("Erro ao dar attach");
+        exit(1);
+    }
+
+    // Sleep de 1 a 7s
+    srand(getpid());
+    int wait_time = rand() % 7 + 1;
+    sleep(wait_time);
+
+    dado->valor = rand() % 100 + 1;
+    dado->seq++;
+
+    printf("Processo %s terminou com valor %02d após %ds\n", argv[0], dado->valor, wait_time);
+    
+    shmdt(dado);
+    exit(0);
+}
+
+Arquivo lab02-4.c
+
+#include "lab02-4-struct.h"
+
+#include <stdio.h>
+#include <stdlib.h>
+
+#include <sys/ipc.h>
+#include <sys/shm.h>
+#include <sys/stat.h>
+#include <sys/wait.h>
+#include <unistd.h>
+
+
+int main() {
+    int segmento1, segmento2;
+    Dado *valor1, *valor2;
+
+    segmento1 = shmget(IPC_PRIVATE, sizeof(Dado), IPC_CREAT | S_IRUSR | S_IWUSR);
+    segmento2 = shmget(IPC_PRIVATE, sizeof(Dado), IPC_CREAT | S_IRUSR | S_IWUSR);
+    if ((segmento1 == -1) || (segmento2 == -1)) {
+        puts("Erro ao alocar memória");
+        exit(1);
+    }
+
+    valor1 = (Dado*)shmat(segmento1, 0, 0);
+    valor2 = (Dado*)shmat(segmento2, 0, 0);
+    if ((valor1 == (void*)-1) || (valor2 == (void*)-1)) {
+        puts("Erro ao dar attach");
+        exit(1);
+    }
+
+    valor1->seq = 0;
+    valor2->seq = 0;
+
+    pid_t id1, id2;
+
+    if ((id1 = fork()) < 0) {
+        puts("Erro ao criar processo filho");
+        exit(-2);
+    }
+    else if (id1 == 0) {
+        char shmid[30];
+        sprintf(shmid, "%d", segmento1);
+        execl("./p1", "p1", shmid, NULL);
+
+        exit(2);
+    }
+
+    if ((id2 = fork()) < 0) {
+        puts("Erro ao criar processo filho");
+        exit(-2);
+    }
+    else if (id2 == 0) {
+        char shmid[30];
+        sprintf(shmid, "%d", segmento2);
+        execl("./p1", "p2", shmid, NULL);
+        
+        exit(2);
+    }
+
+    while(valor1->seq == 0 || valor2->seq == 0) sleep(1);
+
+    printf("A multiplicação é dada por: %d * %d = %d\n", valor1->valor, valor2->valor, valor1->valor * valor2->valor);
+
+    // Aguarda término dos processos para limpeza da tabela do Kernel
+    waitpid(id1, NULL, 0);
+    waitpid(id2, NULL, 0);
+
+    // libera a memória compartilhada
+    shmdt((void*)valor1);
+    shmdt((void*)valor2);
+    shmctl(segmento1, IPC_RMID, 0);
+    shmctl(segmento2, IPC_RMID, 0);
+    
+    return 0;
+}
+------------------------------------------------------------------------
+COMPILAÇÃO E EXECUÇÃO
+
+$ gcc -Wall -o p1 p1.c && gcc -Wall -o lab02-4 lab02-4.c && ./lab02-4
+------------------------------------------------------------------------
+RESULTADO
+
+Processo p2 terminou com valor 02 apos 5s
+Processo p1 terminou com valor 13 apos 6s
+A multiplicação é dada por: 13 * 2 = 26
+------------------------------------------------------------------------
+CONCLUSÃO
+
+O código define uma estrutura (Dado) contendo um valor inteiro e um contador de sequência para controle de estado. No programa principal, o processo pai aloca e anexa dois segmentos de memória compartilhada independentes (m1 e m2), inicializando as variáveis de sequência com zero.
+Em seguida, o pai cria dois processos filhos via fork() e substitui suas imagens de execução chamando execl() para rodar o binário p1, passando o identificador (shmid) da respectiva memória compartilhada como argumento de linha de comando. Cada filho aguarda um tempo aleatório (sleep()), gera um valor randômico, salva na área compartilhada e incrementa o número de sequência para sinalizar a conclusão.
+Enquanto isso, o processo pai monitora as variáveis em um laço de espera (polling com pausas curtas) até que ambos os filhos tenham atualizado seus dados. Assim que ambos concluem, o pai calcula e imprime a multiplicação dos valores gerados, aguarda a finalização dos filhos com waitpid() e realiza o desacoplamento e a destruição dos segmentos de memória compartilhada no sistema.
