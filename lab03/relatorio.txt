@@ -1,251 +1,135 @@
 Guilherme Machado de Bragança Soares - 2410804
 João Pedro Capechi Telhado - 
 
-1) Soma de matrizes:
-Faça um programa para somar matrizes de acordo com o seguinte algoritmo:
-    - O primeiro processo irá criar duas matrizes preenchidas e uma terceira vazia em 3 áreas de memória compartilhada.
-    - Para cada linha da matriz solução, o seu programa deverá gerar um processo para o seu cálculo.
-OBS: implemente as matrizes como vetores de tamanho (linha x coluna) e aloque a shared memory para os vetores correspondentes, pois acessar os elementos (i,j) é complexo.
+1) Execute o programa “ctrl-c.c”. Digite Ctrl-C e Ctrl-\. Analise o resultado.
+Neste mesmo programa, remova os comandos signal( ) e repita o teste anterior observando os resultados.
 ------------------------------------------------------------------------
-ARQUIVO lab02-1.c
+ARQUIVO ctrl-c.c
 
 #include <stdio.h>
 #include <stdlib.h>
-
-#include <sys/ipc.h>
-#include <sys/shm.h>
-#include <sys/stat.h>
-#include <sys/wait.h>
 #include <unistd.h>
+#include <signal.h>
 
-#define LINHAS 4
-#define COLUNAS 5
-#define DEBUG 0     // Tests if they are parallel processes
+#define AUTO 1
 
-int main() {
-    int segmento1, segmento2, segmento3, *mat1, *mat2, *mat3; // Matrices
-    int status; // Processos / forks
-    pid_t pids[LINHAS]; // PID's wait list
 
-    // aloca a memória compartilhada
-    segmento1 = shmget(IPC_PRIVATE, (sizeof(int) * LINHAS * COLUNAS), IPC_CREAT | IPC_EXCL | S_IRUSR | S_IWUSR);
-    segmento2 = shmget(IPC_PRIVATE, (sizeof(int) * LINHAS * COLUNAS), IPC_CREAT | IPC_EXCL | S_IRUSR | S_IWUSR);
-    segmento3 = shmget(IPC_PRIVATE, (sizeof(int) * LINHAS * COLUNAS), IPC_CREAT | IPC_EXCL | S_IRUSR | S_IWUSR);
+void tratador_sinais(int sinal) {
+    switch (sinal) {
+        case SIGINT:
+            printf("\n[SIGINT %d] Você pressionou Ctrl-C. Processo continua ativo.\n", sinal);
+            break;
 
-    // associa a memória compartilhada ao processo
-    mat1 = (int*)shmat(segmento1, 0, 0);
-    mat2 = (int*)shmat(segmento2, 0, 0);
-    mat3 = (int*)shmat(segmento3, 0, 0);
+        case SIGQUIT:
+            printf("\n[SIGQUIT %d] Você pressionou Ctrl-\\. Encerrando de forma limpa...\n", sinal);
+            exit(0);
 
-    if ((*mat1 == -1) || (*mat2 == -1) || (*mat3 == -1)) exit(1); // Attachement error
-
-    printf("Matriz 1:\n");
-    for (int i = 0; i < LINHAS; i++) {
-        for (int j = 0; j < COLUNAS; j++) {
-            *(mat1+i*COLUNAS + j) = COLUNAS*i + j + 1;
-            printf("%02d ", *(mat1+i*COLUNAS + j));
-        }
-        printf("\n");
+        default:
+            printf("\nSinal %d recebido sem ação definida.\n", sinal);
+            break;
     }
-    printf("\n");
-
-    printf("Matriz 2:\n");
-    for (int i = 0; i < LINHAS; i++) {
-        for (int j = 0; j < COLUNAS; j++) {
-            *(mat2+i*COLUNAS + j) = 2*(COLUNAS*i + j + 1);
-            printf("%02d ", *(mat2+i*COLUNAS + j));
-        }
-        printf("\n");
-    }
-    printf("\n");
-
-    for (int linha = 0; linha < LINHAS; linha++) {
-        if ((pids[linha] = fork()) < 0) {
-            puts("Fork Error");
-            exit(-2);
-        }
-        else if (pids[linha] == 0) {
-            if (DEBUG) {
-                printf("Process %d beggins...\n", linha);
-                sleep(1);
-            }
-
-            for (int j = 0; j < COLUNAS; j++) {
-                *(mat3 + linha*COLUNAS + j) = *(mat2 + linha*COLUNAS + j) + *(mat1 + linha*COLUNAS + j);
-            }
-
-            if (DEBUG) printf("Process %d ends...\n", linha);           
-            exit(2);
-        }   
-    }
-
-    // Wait for all the parallel processes to finish
-    for (int i = 0; i < LINHAS; i++) waitpid(pids[i], &status, 0);
-
-    printf("Matriz 3 (soma das anteriores):\n");
-    for (int i = 0; i < LINHAS; i++) {
-        for (int j = 0; j < COLUNAS; j++)
-            printf("%02d ", *(mat3 + i*COLUNAS + j));
-        printf("\n");
-    }
-
-    // libera a memória compartilhada do processo
-    shmdt(mat1);
-    shmdt(mat2);
-    shmdt(mat3);
-
-    // libera a memória compartilhada
-    shmctl(segmento1, IPC_RMID, 0);
-    shmctl(segmento2, IPC_RMID, 0);
-    shmctl(segmento3, IPC_RMID, 0);
-    
-    return 0;
 }
-------------------------------------------------------------------------
-COMPILAÇÃO E EXECUÇÃO
 
-$ gcc -Wall -o lab02-1 lab02-1.c
-$ ./lab02-1
-------------------------------------------------------------------------
-RESULTADO
+void test_cmds() {
+    sleep(2);
+    raise(SIGINT);
+    raise(SIGINT);
+    sleep(2);
+    raise(SIGINT);
+    sleep(3);
+    raise(SIGQUIT);
+}
 
-Matriz 1:
-01 02 03 04 05 
-06 07 08 09 10 
-11 12 13 14 15 
-16 17 18 19 20 
+void get_signal() {
+    while(1) pause();
+}
 
-Matriz 2:
-02 04 06 08 10 
-12 14 16 18 20 
-22 24 26 28 30 
-32 34 36 38 40 
-
-Matriz 3 (soma das anteriores):
-03 06 09 12 15 
-18 21 24 27 30 
-33 36 39 42 45 
-48 51 54 57 60
-------------------------------------------------------------------------
-CONCLUSÃO
-
-O código faz alocação de memória compartilhada para cada matriz e guarda seus ponteiros em três diferentes variáveis. Após isto, há a verificação da alocação e, em seguida, as duas primeiras matrizes são geradas: a primeira com uma sequência de números começando em 1, e a segunda com o dobro do valor da primeira.
-Então, um fork é criado dentro de um loop para gerar um processo de cálculo da soma para cada linha da matriz. Há uma flag de DEBUG que usamos para testar se o programa realmente ficava paralelizado desta forma.
-Assim, os cálculos das somas dos elementos das matrizes é feito e o processo pai espera a conclusão de todos eles por meio de uma conferência no array de PID (waitpid no array pids).
-Por fim, toda a memória compartilhada é desacoplada e liberada.
-------------------------------------------------------------------------
-
-
-2) Mensagem do Dia:
-    - Faça um programa que:
-        - Leia uma mensagem do dia do stdin (ou arquivo)
-        - Crie uma memória compartilhada com a chave 8752
-        - Salve a mensagem na memória
-    - Faça um outro programa “cliente” que utilize a mesma chave (8752) e exiba a mensagem do dia para o usuário
-------------------------------------------------------------------------
-ARQUIVO lab02-2-1.c
-
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-
-#include <sys/ipc.h>
-#include <sys/shm.h>
-#include <sys/stat.h>
-#include <sys/wait.h>
-#include <unistd.h>
-
-#define MSG_SIZE 4096
-
-int main() {
-    char msgDia[MSG_SIZE];
-    fgets(msgDia, sizeof(msgDia), stdin);
-    msgDia[strcspn(msgDia, "\n")] = '\0'; // Removes the '\n' at the end
-
-    char* memoria = NULL;
-    int segmento = shmget(8752, sizeof(msgDia), IPC_CREAT | S_IRUSR | S_IWUSR);
-    
-    if (segmento == -1) {
-        puts("Erro ao alocar memória");
+int main(void) {
+    // Ctrl-C
+    if (signal(SIGINT, tratador_sinais) == SIG_ERR) {
+        perror("Erro ao registrar SIGINT");
         exit(1);
     }
 
-    memoria = (char*) shmat(segmento, 0, 0);
-    if (memoria == (void*)-1) {
-        puts("Erro no attach da memória");
+    // Ctrl-\ Signal
+    if (signal(SIGQUIT, tratador_sinais) == SIG_ERR) {
+        perror("Erro ao registrar SIGQUIT");
         exit(1);
     }
 
-    strcpy(memoria, msgDia);
-    shmdt(memoria);
+    printf("Tratadores ativos.\n");
+    printf(" - Pressione Ctrl-C para testar a captura.\n");
+    printf(" - Pressione Ctrl-\\ para encerrar o programa.\n");
 
-    return 0;
-}
-
-ARQUIVO lab02-2-2.c
-
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-
-#include <sys/ipc.h>
-#include <sys/shm.h>
-#include <sys/stat.h>
-#include <sys/wait.h>
-#include <unistd.h>
-
-
-int main() {
-    int segmento;
-    char* memoria = NULL;
-
-    segmento = shmget(8752, sizeof(char) * 4096, S_IRUSR | S_IWUSR);
-    if (segmento == -1) {
-        puts("Erro ao alocar memória");
-        return 0;
-    }
-
-    memoria = (char*)shmat(segmento, 0, 0);
-    if (memoria == (void*)-1) {
-        puts("Erro ao dar attach");
-        return 0;
-    }
-
-    printf("Msg armazenada: %s\n", memoria);
-
-    // libera a memória compartilhada do processo
-    shmdt(memoria);
-
-    // libera a memória compartilhada
-    shmctl (segmento, IPC_RMID, 0);
+    (AUTO) ? test_cmds() : get_signal();
 
     return 0;
 }
 ------------------------------------------------------------------------
 COMPILAÇÃO E EXECUÇÃO
 
-Juntei os comandos intercalados com o ipcs -m para verificar a memória alocada:
-$ gcc -Wall -o lab02-2-1 lab02-2-1.c && gcc -Wall -o lab02-2-2 lab02-2-2.c && ./lab02-2-1 && ipcs -m && ./lab02-2-2 && ipcs -m
+$ gcc -Wall -o ctrl-c ctrl-c.c && ./ctrl-c
+$ ./ctrl-c
 ------------------------------------------------------------------------
 RESULTADO
 
-Teste de mensagem do dia!
+Tratadores ativos.
+ - Pressione Ctrl-C para testar a captura.
+ - Pressione Ctrl-\ para encerrar o programa.
 
------- Shared Memory Segments --------
-key        shmid      owner      perms      bytes      nattch     status      
-0x00002230 27         guilhermem 600        4096       0                       
+[SIGINT 2] Você pressionou Ctrl-C. Processo continua ativo.
 
-Msg armazenada: Teste de mensagem do dia!
+[SIGINT 2] Você pressionou Ctrl-C. Processo continua ativo.
 
------- Shared Memory Segments --------
-key        shmid      owner      perms      bytes      nattch     status      
+[SIGINT 2] Você pressionou Ctrl-C. Processo continua ativo.
 
-
+[SIGQUIT 3] Você pressionou Ctrl-\. Encerrando de forma limpa...
 ------------------------------------------------------------------------
 CONCLUSÃO
 
-O array da mensagem do dia é declarado e preenchido com um fgets, limpando o \n logo em seguida. Logo após, a memória é alocada em no endereço 8752 e a string posta lá. Isto permite uma persistência entre programas.
-No segundo arquivo, a mesma memória é acessada com o shmget, lida e liberada. A verificação disto é feita com os prints e com o ipcs -m.
+Por padrão, o comando Ctrl-C deveria matar o processo (comportamento que tem caso comente as funções signal), porém nosso handler sobrescreve esta tabela default do Kernel e impede isto.
+Como o comando Ctrl-\ não estava funcionando, colocamos uma flag para um procedimento automático, que dá um raise do sinal para o próprio processo. 
+------------------------------------------------------------------------
+
+
+2) Tente fazer um programa para interceptar o sinal SIGKILL. Você conseguiu? Explique.
+------------------------------------------------------------------------
+ARQUIVO intercept_kill.c
+
+#include <stdio.h>
+#include <signal.h>
+#include <stdlib.h>
+#include <unistd.h>
+
+
+void handler_kill(int sinal) {
+    printf("Tentando tratar o SIGKILL (%d)... Este texto nunca vai aparecer!\n", sinal);
+}
+
+int main(void) {
+    // Handler tenta interceptar o sinal SIGKILL
+    if (signal(SIGKILL, handler_kill) == SIG_ERR) {
+        printf("Erro ao registrar tratador para SIGKILL!\n");
+    } else {
+        printf("Conseguimos interceptar o SIGKILL!\n");
+    }
+
+    return 0;
+}
+------------------------------------------------------------------------
+COMPILAÇÃO E EXECUÇÃO
+
+$ gcc -Wall -o intercept_kill intercept_kill.c && ./intercept_kill
+------------------------------------------------------------------------
+RESULTADO
+
+Erro ao registrar tratador para SIGKILL!
+------------------------------------------------------------------------
+CONCLUSÃO
+
+Ao tentar sobrescrever o endereço do tratamento do SIGKILL na tabela do Kernel, o sistema impede, levantando o erro.
+Isto ocorre, pois o SIGKILL é enviado ao Kernel e executado por ele diretamente, invés de ser mandado de volta para o programa.
+Assim, ele se torna um sinal não bloqueável.
 ------------------------------------------------------------------------
 
 
@@ -254,255 +138,194 @@ No segundo arquivo, a mesma memória é acessada com o shmget, lida e liberada. 
     - Crie uma memória compartilhada com dados numéricos inteiros e desordenados e a divida pelo número de processos
     - Cada processo deve procurar o dado na sua área de memória e informar a posição onde o dado foi localizado.
 ------------------------------------------------------------------------
-ARQUIVO lab02-3.c
+ARQUIVO filhocidio.c
 
-#include <stdio.h>
-#include <stdlib.h>
-
+#include <unistd.h>
+#include <sys/wait.h>
+#include <signal.h>
 #include <sys/ipc.h>
 #include <sys/shm.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
-#include <unistd.h>
+#include <stdlib.h>
+#include <stdio.h>
 
-#define TAM 10
-#define qtdFilhos 4
-#define DEBUG 0     // Tests if they are parallel processes
+void childhandler(int signo);
+int delay;
 
+int main (int argc, char *argv[]) {
+    pid_t pid;
+    signal(SIGCHLD, childhandler);
 
-int main() {
-    int segmento;
-    int* vetor = NULL;
+    // Error
+    if ((pid = fork()) < 0) {
+        fprintf(stderr, "Erro ao criar filho\n");
+        exit(-1);
+    }
+    // Child
+    if (pid == 0) {
+        char* args[] = {argv[2], NULL};
+        execve(argv[2], args, 0); /* ou sleep(3);*/
+    }
+    // Parent
+    else {
+        sscanf(argv[1], "%d", &delay); /* read delay from command line */
+        sleep(delay);
+        printf("Program %s exceeded limit of %d seconds!\n", argv[2], delay);
+        kill(pid, SIGKILL);
 
-    segmento = shmget(IPC_PRIVATE, sizeof(int) * (TAM + 1), IPC_CREAT | S_IRUSR | S_IWUSR);
-    if (segmento == -1) {
-        puts("Erro ao alocar memória");
-        exit(1);
+        sleep(1); /* necessary for SIGCHLD to arrive */
     }
 
-    vetor = (int*)shmat(segmento, 0, 0);
-    if (vetor == (void*)-1) {
-        puts("Erro ao dar attach");
-        exit(1);
-    }
-
-    vetor[TAM] = 0; // Flag for the desired value (if it was found)
-    printf("[ ");
-    for (int i = 0; i < TAM; i++) {
-        vetor[i] = rand() % 100;
-        printf("%d ", vetor[i]);
-    }
-    printf("]\n");
-
-    int valorBusca;
-    printf("Digite o valor a buscar: ");
-    scanf("%d", &valorBusca);
-
-    int tamAreaVetor = (TAM + qtdFilhos - 1) / qtdFilhos; // Arredondar para cima a divisão
-    pid_t pids[qtdFilhos];
-
-    for (int i = 0; i < qtdFilhos; i++)
-    {
-        if ((pids[i] = fork()) < 0) {
-            puts("Erro ao criar o filho");
-            exit(-2);
-        }
-        else if (pids[i] == 0) {
-            if (DEBUG) {
-                printf("Process %d beggins...\n", i);
-                sleep(1);
-            }
-
-            for (int pos = 0; pos < tamAreaVetor; pos++) {
-                if (pos + i*tamAreaVetor >= TAM) break;
-
-                if (*(vetor + pos + i*tamAreaVetor) == valorBusca) {
-                    vetor[TAM] = 1;
-                    printf("Valor encontrado no index %d\n", pos + i * tamAreaVetor);
-                }
-            }
-
-            shmdt(vetor);
-
-            if (DEBUG) printf("Process %d ends...\n", i);           
-            exit(2);
-        }
-    }
-
-    for (int i = 0; i < qtdFilhos; i++) waitpid(pids[i], NULL, 0);
-    if (vetor[TAM] == 0) printf("Valor ausente da lista!\n");
-
-    // libera a memória compaprtilhada
-    shmdt(vetor);
-    shmctl (segmento, IPC_RMID, 0);
-    
     return 0;
 }
-------------------------------------------------------------------------
-COMPILAÇÃO E EXECUÇÃO
 
-$ gcc -Wall -o lab02-3 lab02-3.c
-$ ./lab02-3
-------------------------------------------------------------------------
-RESULTADO
+/* Executed if child dies before parent */
+void childhandler(int signo) {
+    int status;
 
-[ 83 86 77 15 93 35 86 92 49 21 ]
-Digite o valor a buscar: 86
-Valor encontrado no index 1
-Valor encontrado no index 6
-------------------------------------------------------------------------
-CONCLUSÃO
+    pid_t pid = wait(&status);
+    printf("Child %d terminated within %d seconds with status %d.\n", pid, delay, status);
 
-O código faz basicamente o que foi feito no primeiro exercício no que tange à alocação de memória e como os processos são paralelizados.
-Um ponto importante de ser explicado é que, para mostrar que um valor não está no vetor, fizemos uma flag de "found" presente como o último elemento dele. Assim ela é vista por todos os processos e pode ser utilizada para printar a mensagem de valor não encontrado.
-------------------------------------------------------------------------
-
-
-4) Multiplicação multi-processo:
-Faça um programa que:
-    - Tenha um processo pai que abre dois blocos de memória compartilhada, m1 e m2.
-    - cria dois processos filho (use exec), P1 e P2: estes também fazem attach em m1 ou m2 respectivamente
-    - Cada um dá um sleep() randômico e escreve um valor int na área compartilhada dele, e avisa o processo pai que um novo valor foi gerado, escrevendo tb um nr de sequencia
-    - O pai fica em loop verificando se houve um novo valor. Apenas quando ambos P1 e P2 geraram um novo valor, o pai imprime o produto dos valores gerados por P1 e P2
-------------------------------------------------------------------------
-ARQUIVO lab02-4-struct.h
-
-#pragma once
-
-typedef struct dado {
-    int valor;
-    int seq;
-} Dado;
-
-Arquivo p1.c
-#include "lab02-4-struct.h"
-
-#include <stdio.h>
-#include <stdlib.h>
-#include <time.h>
-
-#include <sys/ipc.h>
-#include <sys/shm.h>
-#include <unistd.h>
-
-int main(int argc, char *argv[])
-{
-    if (argc != 2) {
-        printf("Uso: %s <shmid>\n", argv[0]);
-        exit(1);
-    }
-    
-    int segmento = atoi(argv[1]);
-    Dado *dado = (Dado*)shmat(segmento, 0, 0);
-    if (dado == (void*)-1) {
-        puts("Erro ao dar attach");
-        exit(1);
-    }
-
-    // Sleep de 1 a 7s
-    srand(getpid());
-    int wait_time = rand() % 7 + 1;
-    sleep(wait_time);
-
-    dado->valor = rand() % 100 + 1;
-    dado->seq++;
-
-    printf("Processo %s terminou com valor %02d após %ds\n", argv[0], dado->valor, wait_time);
-    
-    shmdt(dado);
     exit(0);
 }
 
-Arquivo lab02-4.c
-
-#include "lab02-4-struct.h"
+ARQUIVO sleep5.c
 
 #include <stdio.h>
-#include <stdlib.h>
-
-#include <sys/ipc.h>
-#include <sys/shm.h>
-#include <sys/stat.h>
-#include <sys/wait.h>
 #include <unistd.h>
 
-
-int main() {
-    int segmento1, segmento2;
-    Dado *valor1, *valor2;
-
-    segmento1 = shmget(IPC_PRIVATE, sizeof(Dado), IPC_CREAT | S_IRUSR | S_IWUSR);
-    segmento2 = shmget(IPC_PRIVATE, sizeof(Dado), IPC_CREAT | S_IRUSR | S_IWUSR);
-    if ((segmento1 == -1) || (segmento2 == -1)) {
-        puts("Erro ao alocar memória");
-        exit(1);
-    }
-
-    valor1 = (Dado*)shmat(segmento1, 0, 0);
-    valor2 = (Dado*)shmat(segmento2, 0, 0);
-    if ((valor1 == (void*)-1) || (valor2 == (void*)-1)) {
-        puts("Erro ao dar attach");
-        exit(1);
-    }
-
-    valor1->seq = 0;
-    valor2->seq = 0;
-
-    pid_t id1, id2;
-
-    if ((id1 = fork()) < 0) {
-        puts("Erro ao criar processo filho");
-        exit(-2);
-    }
-    else if (id1 == 0) {
-        char shmid[30];
-        sprintf(shmid, "%d", segmento1);
-        execl("./p1", "p1", shmid, NULL);
-
-        exit(2);
-    }
-
-    if ((id2 = fork()) < 0) {
-        puts("Erro ao criar processo filho");
-        exit(-2);
-    }
-    else if (id2 == 0) {
-        char shmid[30];
-        sprintf(shmid, "%d", segmento2);
-        execl("./p1", "p2", shmid, NULL);
-        
-        exit(2);
-    }
-
-    while(valor1->seq == 0 || valor2->seq == 0) sleep(1);
-
-    printf("A multiplicação é dada por: %d * %d = %d\n", valor1->valor, valor2->valor, valor1->valor * valor2->valor);
-
-    // Aguarda término dos processos para limpeza da tabela do Kernel
-    waitpid(id1, NULL, 0);
-    waitpid(id2, NULL, 0);
-
-    // libera a memória compartilhada
-    shmdt((void*)valor1);
-    shmdt((void*)valor2);
-    shmctl(segmento1, IPC_RMID, 0);
-    shmctl(segmento2, IPC_RMID, 0);
+int main (void) {
+    fprintf(stdout, "Indo dormir...\n");
+    sleep(5);
+    fprintf(stdout, "Acordei!\n");
     
+    return 0;
+}
+
+ARQUIVO sleep15.c
+
+#include <stdio.h>
+#include <unistd.h>
+
+int main (void) {
+    fprintf(stdout, "Indo dormir...\n");
+    sleep(15);
+    fprintf(stdout, "Acordei!\n");
+
     return 0;
 }
 ------------------------------------------------------------------------
 COMPILAÇÃO E EXECUÇÃO
 
-$ gcc -Wall -o p1 p1.c && gcc -Wall -o lab02-4 lab02-4.c && ./lab02-4
+$ gcc -Wall -o filhocidio filhocidio.c
+$ gcc -Wall -o sleep5 sleep5.c
+$ gcc -Wall -o sleep15 sleep15.c
+$ ./filhocidio 10 ./sleep5 && ./filhocidio 10 ./sleep15
 ------------------------------------------------------------------------
 RESULTADO
 
-Processo p2 terminou com valor 02 apos 5s
-Processo p1 terminou com valor 13 apos 6s
-A multiplicação é dada por: 13 * 2 = 26
+Indo dormir...
+Acordei!
+Child 157235 terminated within 10 seconds with status 0.
+Indo dormir...
+Program ./sleep15 exceeded limit of 10 seconds!
+Child 157293 terminated within 10 seconds with status 9.
 ------------------------------------------------------------------------
 CONCLUSÃO
 
-O código define uma estrutura (Dado) contendo um valor inteiro e um contador de sequência para controle de estado. No programa principal, o processo pai aloca e anexa dois segmentos de memória compartilhada independentes (m1 e m2), inicializando as variáveis de sequência com zero.
-Em seguida, o pai cria dois processos filhos via fork() e substitui suas imagens de execução chamando execl() para rodar o binário p1, passando o identificador (shmid) da respectiva memória compartilhada como argumento de linha de comando. Cada filho aguarda um tempo aleatório (sleep()), gera um valor randômico, salva na área compartilhada e incrementa o número de sequência para sinalizar a conclusão.
-Enquanto isso, o processo pai monitora as variáveis em um laço de espera (polling com pausas curtas) até que ambos os filhos tenham atualizado seus dados. Assim que ambos concluem, o pai calcula e imprime a multiplicação dos valores gerados, aguarda a finalização dos filhos com waitpid() e realiza o desacoplamento e a destruição dos segmentos de memória compartilhada no sistema.
+O programa cria um processo filho via fork() para rodar outro executável com execve() e define um tempo limite no processo pai através de sleep().
+Um handler é configurado para interceptar o sinal SIGCHLD, que é emitido pelo Kernel sempre que o filho termina.
+No caso do ./sleep5, o filho encerra antes do tempo limite, disparando o SIGCHLD que acorda o pai e executa o handler, recolhendo o término normal com status 0 via wait().
+No caso do ./sleep15, o filho ultrapassa o limite estipulado; o pai termina seu sleep(), avisa o estouro do tempo e mata o filho enviando SIGKILL.
+A morte forçada do filho gera o sinal SIGCHLD, fazendo o handler ser chamado para coletar o processo com status 9 (código do próprio SIGKILL).
+------------------------------------------------------------------------
+
+
+4) Usando SIGSTOP e SIGCONT faça um programa que crie 2 processos filho e alterne a execução dos filhos. Após 10 trocas de contexto, o processo pai mata os processos filho.
+OBS: Os processos filho são formados por loops infinitos.
+------------------------------------------------------------------------
+ARQUIVO lab03-4
+
+#include <unistd.h>
+#include <signal.h>
+#include <sys/wait.h>
+
+#include <stdio.h>
+#include <stdlib.h>
+
+#define QTD_FILHOS 2
+#define QTD_TROCAS 10
+#define EVER ;;
+
+int main(void)  {
+    pid_t pids[QTD_FILHOS]; // Processos filhos
+
+    for (int i = 0; i < QTD_FILHOS; i++) {
+        if ((pids[i] = fork()) < 0) {
+            puts("Erro ao criar o filho");
+            exit(3);
+        }
+
+        else if (pids[i] == 0) for(EVER); // Deixa filho rodando
+
+        else kill(pids[i], SIGSTOP);
+    }
+
+    // Alternando SIGSTOP e SIGCONT
+    for (int j = 0; j < QTD_TROCAS + 1; j++) {
+        int i = j % QTD_FILHOS;
+        sleep(1);
+        printf("[%d] Acordando filho %d\n", j, pids[i]);
+        kill(pids[i], SIGCONT);
+        sleep(2);
+        printf("[%d] Dormindo o filho %d\n", j, pids[i]);
+        kill(pids[i], SIGSTOP);
+    }
+
+    for (int i = 0; i < QTD_FILHOS; i++) {
+        sleep(1);
+        printf("Matando o processo %d\n", pids[i]);
+        sleep(1);
+        kill(pids[i], SIGKILL);
+    }
+
+    return 0;
+}
+------------------------------------------------------------------------
+COMPILAÇÃO E EXECUÇÃO
+
+$ gcc -Wall -o lab03-4 lab03-4.c && ./lab03-4
+------------------------------------------------------------------------
+RESULTADO
+
+[0] Acordando filho 164551
+[0] Dormindo o filho 164551
+[1] Acordando filho 164552
+[1] Dormindo o filho 164552
+[2] Acordando filho 164551
+[2] Dormindo o filho 164551
+[3] Acordando filho 164552
+[3] Dormindo o filho 164552
+[4] Acordando filho 164551
+[4] Dormindo o filho 164551
+[5] Acordando filho 164552
+[5] Dormindo o filho 164552
+[6] Acordando filho 164551
+[6] Dormindo o filho 164551
+[7] Acordando filho 164552
+[7] Dormindo o filho 164552
+[8] Acordando filho 164551
+[8] Dormindo o filho 164551
+[9] Acordando filho 164552
+[9] Dormindo o filho 164552
+[10] Acordando filho 164551
+[10] Dormindo o filho 164551
+Matando o processo 164551
+Matando o processo 164552
+------------------------------------------------------------------------
+CONCLUSÃO
+
+O programa cria dois processos filhos via fork() que executam em loop infinito e são imediatamente suspensos pelo pai com SIGSTOP.
+Em seguida, um laço alterna a execução entre eles através do índice j % QTD_FILHOS: a cada iteração, o pai acorda o filho da vez com SIGCONT, aguarda dois segundos para que ele execute e volta a suspendê-lo com SIGSTOP.
+Ao final das trocas estipuladas, o processo pai percorre o vetor de PIDs e encerra definitivamente ambos os filhos enviando o sinal SIGKILL.

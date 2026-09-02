@@ -1,54 +1,59 @@
-/*
-* 1) Execute o programa “ctrl-c.c”.
-* Digite Ctrl-C e Ctrl-\. Analise o resultado.
-*/
-#include <unistd.h>
-#include <stdlib.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
 #include <signal.h>
 
-#define automatico 1
+#define AUTO 1
 
-void funcaoTratadora (int sinal) {
-    // tratamento do(s) sinal(is)
-    printf("Sinal: %d\n", sinal);
-    switch (sinal)
-    {
-        // Ctrl-C
+
+void tratador_sinais(int sinal) {
+    switch (sinal) {
         case SIGINT:
-            puts("Ctrl-C evitado\n");
+            printf("\n[SIGINT %d] Você pressionou Ctrl-C. Processo continua ativo.\n", sinal);
             break;
-        // Ctrl-\ ()
-        default:
-            puts("Terminando a execução\n");
+
+        case SIGQUIT:
+            printf("\n[SIGQUIT %d] Você pressionou Ctrl-\\. Encerrando de forma limpa...\n", sinal);
             exit(0);
+
+        default:
+            printf("\nSinal %d recebido sem ação definida.\n", sinal);
+            break;
     }
 }
 
-int main (void) {
-    // captura Ctrl-C (SIGINT)
-    if (signal(SIGINT, funcaoTratadora) == SIG_ERR) {
-        // erro ao instalar a rotina de atendimento do sinal SIGINT
-        puts("Erro ao alocar o handler do signal\n");
-        exit(1);
-    }
-    // captura Ctrl-\ (SIGABRT; SIGQUIT - codespaces)
-    else if (signal(SIGQUIT, funcaoTratadora) == SIG_ERR) {
-        // erro ao instalar a rotina de atendimento do sinal SIGQUIT
-        puts("Erro ao alocar o handler do signal\n");
-        exit(1);
-    }
-    
-    #ifdef automatico
-        // Teste automático
-        sleep(2);
-        raise(SIGINT);
-        sleep(2);
-        raise(SIGQUIT);
-    #else
-        // Teste com o terminal
-        for(;;);
-    #endif
+void test_cmds() {
+    sleep(2);
+    raise(SIGINT);
+    raise(SIGINT);
+    sleep(2);
+    raise(SIGINT);
+    sleep(3);
+    raise(SIGQUIT);
+}
 
-    
+void get_signal() {
+    while(1) pause();
+}
+
+int main(void) {
+    // Ctrl-C
+    if (signal(SIGINT, tratador_sinais) == SIG_ERR) {
+        perror("Erro ao registrar SIGINT");
+        exit(1);
+    }
+
+    // Ctrl-\ Signal
+    if (signal(SIGQUIT, tratador_sinais) == SIG_ERR) {
+        perror("Erro ao registrar SIGQUIT");
+        exit(1);
+    }
+
+    printf("Tratadores ativos.\n");
+    printf(" - Pressione Ctrl-C para testar a captura.\n");
+    printf(" - Pressione Ctrl-\\ para encerrar o programa.\n");
+
+    (AUTO) ? test_cmds() : get_signal();
+
+    return 0;
 }

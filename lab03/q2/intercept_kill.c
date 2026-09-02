@@ -3,16 +3,17 @@
 #include <stdlib.h>
 #include <unistd.h>
 
-void meu_handler_kill(int sinal) {
+
+void handler_kill(int sinal) {
     printf("Tentando tratar o SIGKILL (%d)... Este texto nunca vai aparecer!\n", sinal);
 }
 
 int main(void) {
-    // Tenta interceptar o sinal SIGKILL (sinal 9)
-    if (signal(SIGKILL, meu_handler_kill) == SIG_ERR) {
-        perror("Erro ao registrar tratador para SIGKILL");
+    // Handler tenta interceptar o sinal SIGKILL
+    if (signal(SIGKILL, handler_kill) == SIG_ERR) {
+        printf("Erro ao registrar tratador para SIGKILL!\n");
     } else {
-        printf("Conseguiu registrar!\n");
+        printf("Conseguimos interceptar o SIGKILL!\n");
     }
 
     return 0;
