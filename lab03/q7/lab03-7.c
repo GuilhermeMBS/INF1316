@@ -14,68 +14,59 @@
 #include <stdlib.h>
 #include <stdio.h>
 
+#define QTDPROCESS 3
 
-struct timespec start, end;
-typedef unsigned long long ull;
-
-
-void estimate_price(double duration) {
-    double price = 0.0;
-    price = (duration * 2.0);
-    if (duration > 60) (price -= (duration - 60.0));
-    printf("=> Estimated Price: R$%.2lf\n", price / 100.0);
-}
-
-
-void make_call(ull time) {
-    struct timespec ts;
-    ts.tv_sec = 0;
-    ts.tv_nsec = (ull)time * 1e6;
-    pid_t ppid = getppid();
-
-    puts("[Call started]");
-    kill(ppid, SIGUSR1);
-    nanosleep(&ts, NULL);
-    puts("[Call ended]");
-    kill(ppid, SIGUSR2);
-}
-
+pid_t pids[QTDPROCESS];
 
 void handle_sig(int signal) {
-    if (signal == SIGUSR1) {
-        timespec_get(&start, TIME_UTC);
+    if (signal == SIGINT)
+    {
+        puts("Ending child process...\n");
+        for (int i = 0; i < QTDPROCESS; i++)
+        {
+            kill(pids[i], SIGKILL);
+        }
+        puts("Ending parent process...\n");
+        eit(0);
     }
-
-    if (signal == SIGUSR2) {
-        timespec_get(&end, TIME_UTC);
-        double elapsed = (end.tv_sec - start.tv_sec) * 1000.0 +
-                         (end.tv_nsec - start.tv_nsec) / 1e6;
-        printf("The call had %.2f seconds. Estimating it's price...\n", elapsed);
-        estimate_price(elapsed);
-    }
+    return;
 }
 
 
 int main(void) {
-    if (signal(SIGUSR1, handle_sig) == SIG_ERR) {
+    if (signal(SIGINT, handle_sig) == SIG_ERR) {
         perror("Error while starting a call.");
         exit(1);
     }
 
-    if (signal(SIGUSR2, handle_sig) == SIG_ERR) {
-        perror("Error while ending the call");
-        exit(1);
+    pid_t pids[QTDPROCESS];
+
+    for (int i =0; i < QTDPROCESS; i++)
+    {
+        if ((pids[i] = fork()) < 0) // Erro
+        {
+            perror("Error while forking the process");
+        }
+        else if (pids[i] = 0) // Filho
+        {
+            // Implementar o exec dos outros códigos
+            // execv()
+        }
+        else // Pai
+        {
+            kill(pids[i], SIGSTOP);
+        }
     }
-
-    pid_t pid = fork();
-
-    if (pid == 0) {
-        make_call(90); // One and a half minute
-        exit(1);
+    
+    unsigned int delay;
+    int atual = 0; // Processo que assume o controle3
+    while (1)
+    {
+        kill(pids[atual], SIGCONT);
+        delay = (atual == 0) ? 1 : 2; // 1 sec para o primeiro processo, e 2 sec para os demais 
+        sleep(delay);
+        atual = (atual + 1) % QTDPROCESS;
     }
-    else if (pid < 0) perror("Error while forking the process");
-
-    waitpid(pid, NULL, 0);
 
     return 0;
 }
