@@ -21,13 +21,13 @@ pid_t pids[QTDPROCESS];
 void handle_sig(int signal) {
     if (signal == SIGINT)
     {
-        puts("Ending child process...\n");
+        puts("\nEnding child process...\n");
         for (int i = 0; i < QTDPROCESS; i++)
         {
             kill(pids[i], SIGKILL);
         }
         puts("Ending parent process...\n");
-        eit(0);
+        exit(0);
     }
     return;
 }
@@ -39,7 +39,7 @@ int main(void) {
         exit(1);
     }
 
-    pid_t pids[QTDPROCESS];
+    char* sentences[] = {"[FILHO 1] Ola, sou o filho 1", "[FILHO 2] Teste do filho 2", "[FILHO 3] Agora o terceiro"};
 
     for (int i =0; i < QTDPROCESS; i++)
     {
@@ -47,10 +47,11 @@ int main(void) {
         {
             perror("Error while forking the process");
         }
-        else if (pids[i] = 0) // Filho
+        else if (pids[i] == 0) // Filho
         {
             // Implementar o exec dos outros códigos
-            // execv()
+            char* args[] = {"./io1", sentences[i], NULL};
+            execve("./io1", args, NULL);
         }
         else // Pai
         {
@@ -65,6 +66,7 @@ int main(void) {
         kill(pids[atual], SIGCONT);
         delay = (atual == 0) ? 1 : 2; // 1 sec para o primeiro processo, e 2 sec para os demais 
         sleep(delay);
+        kill(pids[atual], SIGSTOP);
         atual = (atual + 1) % QTDPROCESS;
     }
 
