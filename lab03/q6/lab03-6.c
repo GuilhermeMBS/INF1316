@@ -25,16 +25,16 @@ void estimate_price(double duration) {
 }
 
 
-void make_call(ull time, int call) {
+void make_call(ull time) {
     struct timespec ts;
     ts.tv_sec = 0;
-    ts.tv_nsec = time * 1e6;
+    ts.tv_nsec = (ull)time * 1e6;
     pid_t ppid = getppid();
 
-    printf("[Call %d started]\n", call);
+    puts("[Call started]");
     kill(ppid, SIGUSR1);
     nanosleep(&ts, NULL);
-    printf("[Call %d ended]\n", call);
+    puts("[Call ended]");
     kill(ppid, SIGUSR2);
 }
 
@@ -46,7 +46,8 @@ void handle_sig(int signal) {
 
     if (signal == SIGUSR2) {
         timespec_get(&end, TIME_UTC);
-        double elapsed = (end.tv_nsec - start.tv_nsec) / 1e6;
+        double elapsed = (end.tv_sec - start.tv_sec) * 1000.0 +
+                         (end.tv_nsec - start.tv_nsec) / 1e6;
         printf("The call had %.2f seconds. Estimating it's price...\n", elapsed);
         estimate_price(elapsed);
     }
@@ -64,24 +65,15 @@ int main(void) {
         exit(1);
     }
 
-    pid_t pids[3];
-    ull times[3] = {
-        1*60 + 30,  // One minute and a half long call (should cost around R$1,50)
-        0*60 + 55,  // 55 seconds call (should cost around R$1,10)
-        5*60 + 00   // 5 minutes call (should cost around R$3,60)
-    };
+    pid_t pid = fork();
 
-    for (int i = 0; i < 3; i++) {
-        pids[i] = fork();
-        
-        if (pids[i] == 0) {
-            make_call(times[i], i + 1);
-            exit(1);
-        }
-        else if (pids[i] < 0) perror("Error while forking the process");
+    if (pid == 0) {
+        make_call(90); // One and a half minute
+        exit(1);
     }
+    else if (pid < 0) perror("Error while forking the process");
 
-    for (int i = 0; i < 3; i++) waitpid(pids[i], NULL, 0);
+    waitpid(pid, NULL, 0);
 
     return 0;
 }
