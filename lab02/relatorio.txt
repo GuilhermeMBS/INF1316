@@ -1,5 +1,5 @@
 Guilherme Machado de Bragança Soares - 2410804
-João Pedro Capechi Telhado - 
+João Pedro Capechi Telhado - 2410535
 
 1) Soma de matrizes:
 Faça um programa para somar matrizes de acordo com o seguinte algoritmo:

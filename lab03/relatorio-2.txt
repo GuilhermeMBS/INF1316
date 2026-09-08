@@ -1,0 +1,316 @@
+Guilherme Machado de Bragança Soares - 2410804
+João Pedro Capechi Telhado - 2410535
+
+5) Faça um programa que leia 2 números e imprima o resultado das 4 operações básicas sobre estes 2 números.
+- Verifique o que acontece se o 2º. número da entrada for 0 (zero);
+- Capture o sinal de erro de floating point (SIGFPE) e repita a experiência anterior;
+------------------------------------------------------------------------
+ARQUIVO lab03-5.c
+
+#include <unistd.h>
+#include <sys/wait.h>
+#include <signal.h>
+#include <sys/ipc.h>
+#include <sys/stat.h>
+#include <stdlib.h>
+#include <stdio.h>
+
+#define CAPTURE_SIG 0
+
+#if CAPTURE_SIG
+void handle_sig(int signal) {
+    if (signal == SIGFPE) {
+        puts("Floating point error captured!");
+        exit(2);
+    }
+}
+#endif
+
+void print_operations(int x, int y) {
+    printf("%d + %d = %d\n", x, y, x + y);
+    printf("%d - %d = %d\n", x, y, x - y);
+    printf("%d * %d = %d\n", x, y, x * y);
+    printf("%d / %d = %d\n", x, y, x / y);
+}
+
+int main(void) {
+    int x, y;
+
+    puts("Input x and y: ");
+    scanf("%d %d", &x, &y);
+
+    #if CAPTURE_SIG
+    if (signal(SIGFPE, handle_sig) == SIG_ERR) {
+        perror("Floating Point Signal Capture Error");
+        exit(1);
+    }
+    #endif
+
+    puts("\n=== Manual Inputs ===");
+    print_operations(x, y);
+    puts("=====================");
+    puts("\n=== Case With Zero ===");
+    print_operations(x, 0);
+    puts("======================\n");
+
+    return 0;
+}
+------------------------------------------------------------------------
+COMPILAÇÃO E EXECUÇÃO
+
+$ gcc -Wall -o lab03-5 lab03-5.c && ./lab03-5
+$ 2 3
+------------------------------------------------------------------------
+RESULTADO (FLAG INATIVA)
+
+Input x and y: 
+2 3
+
+=== Manual Inputs ===
+2 + 3 = 5
+2 - 3 = -1
+2 * 3 = 6
+2 / 3 = 0
+=====================
+
+=== Case With Zero ===
+2 + 0 = 2
+2 - 0 = 2
+2 * 0 = 0
+Floating point exception (core dumped)
+
+RESULTADO (FLAG ATIVA)
+
+Input x and y: 
+2 3
+
+=== Manual Inputs ===
+2 + 3 = 5
+2 - 3 = -1
+2 * 3 = 6
+2 / 3 = 0
+=====================
+
+=== Case With Zero ===
+2 + 0 = 2
+2 - 0 = 2
+2 * 0 = 0
+Floating point error captured!
+------------------------------------------------------------------------
+CONCLUSÃO
+
+Por padrão, a divisão por zero gera uma falha de hardware que o Kernel traduz no sinal SIGFPE, abortando o processo com a mensagem Floating point exception (core dumped).
+Ao registrar um handler para o SIGFPE, sobrescrevemos a ação default do Kernel, o que permite interceptar o erro e encerrar a execução de forma controlada via exit(2) — passo obrigatório, pois retornar do handler faria a CPU tentar reexecutar a instrução de divisão que falhou, entrando em loop infinito.
+------------------------------------------------------------------------
+
+
+6) Faça um programa para monitorar e informar o preço de chamadas telefônicas. O programa deverá ser executado em background.
+- O início e o término de uma chamada são informados através dos sinais SIGUSR1 e SIGUSR2, respectivamente.
+- O custo da ligação é de 2 centavos por segundo, para ligações de até 1 minuto ou de 1 centavo por segundo a partir do 2º. minuto, ou seja, uma ligação de 1m30s custa R$1,50.
+------------------------------------------------------------------------
+ARQUIVO lab03-6.c
+
+/**
+ * This program uses milliseconds as an abstraction for the seconds.
+ * So a call with 30 seconds long will be represented as a
+ * 30 milliseconds long call in here.
+ */
+#include <unistd.h>
+#include <sys/wait.h>
+#include <signal.h>
+#include <sys/ipc.h>
+#include <sys/stat.h>
+#include <time.h>
+#include <stdlib.h>
+#include <stdio.h>
+
+
+struct timespec start, end;
+typedef unsigned long long ull;
+
+
+void estimate_price(double duration) {
+    double price = 0.0;
+    price = (duration * 2.0);
+    if (duration > 60) (price -= (duration - 60.0));
+    printf("=> Estimated Price: R$%.2lf\n", price / 100.0);
+}
+
+
+void make_call(ull time) {
+    struct timespec ts;
+    ts.tv_sec = 0;
+    ts.tv_nsec = (ull)time * 1e6;
+    pid_t ppid = getppid();
+
+    puts("[Call started]");
+    kill(ppid, SIGUSR1);
+    nanosleep(&ts, NULL);
+    puts("[Call ended]");
+    kill(ppid, SIGUSR2);
+}
+
+
+void handle_sig(int signal) {
+    if (signal == SIGUSR1) {
+        timespec_get(&start, TIME_UTC);
+    }
+
+    if (signal == SIGUSR2) {
+        timespec_get(&end, TIME_UTC);
+        double elapsed = (end.tv_sec - start.tv_sec) * 1000.0 +
+                         (end.tv_nsec - start.tv_nsec) / 1e6;
+        printf("The call had %.2f seconds. Estimating it's price...\n", elapsed);
+        estimate_price(elapsed);
+    }
+}
+
+
+int main(void) {
+    if (signal(SIGUSR1, handle_sig) == SIG_ERR) {
+        perror("Error while starting a call.");
+        exit(1);
+    }
+
+    if (signal(SIGUSR2, handle_sig) == SIG_ERR) {
+        perror("Error while ending the call");
+        exit(1);
+    }
+
+    pid_t pid = fork();
+
+    if (pid == 0) {
+        make_call(90); // One and a half minute
+        exit(1);
+    }
+    else if (pid < 0) perror("Error while forking the process");
+
+    waitpid(pid, NULL, 0);
+
+    return 0;
+}
+------------------------------------------------------------------------
+COMPILAÇÃO E EXECUÇÃO
+
+$ gcc -Wall -o lab03-6 lab03-6.c && ./lab03-6
+------------------------------------------------------------------------
+RESULTADO
+
+[Call started]
+[Call ended]
+The call had 90.86 seconds. Estimating it's price...
+=> Estimated Price: R$1.51
+------------------------------------------------------------------------
+CONCLUSÃO
+
+O programa utiliza os sinais definidos pelo usuário (SIGUSR1 e SIGUSR2) para notificar assincronamente o processo pai sobre o início e o término de cada ligação simulada pelo filho.
+Ao registrar esses eventos nos handlers, a medição do tempo real decorrido exige o tratamento conjunto dos campos de segundos (tv_sec) e nanossegundos (tv_nsec) da struct timespec.
+Desconsiderar os segundos inteiros gera diferenças negativas na virada de segundo do relógio do sistema, enquanto o cálculo composto garante a precisão necessária para tarifar o tempo de chamada com exatidão.
+------------------------------------------------------------------------
+
+
+7) Elabore três programas I/O bound que não terminem (loop de msgs no vídeo).
+- Elabore um programa que seja capaz de executar os 3 programas indicados anteriormente e que simule o compartilhamento da CPU entre os 3 processos com escalonamento Round-Robin com uma fatia de tempo de 1 segundo para o primeiro processo e de 2 segundos para os demais processos. Execute os programas e relate o que aconteceu
+------------------------------------------------------------------------
+ARQUIVO filhocidio.c
+
+#include <unistd.h>
+#include <sys/wait.h>
+#include <signal.h>
+#include <sys/ipc.h>
+#include <sys/shm.h>
+#include <sys/stat.h>
+#include <sys/wait.h>
+#include <stdlib.h>
+#include <stdio.h>
+
+void childhandler(int signo);
+int delay;
+
+int main (int argc, char *argv[]) {
+    pid_t pid;
+    signal(SIGCHLD, childhandler);
+
+    // Error
+    if ((pid = fork()) < 0) {
+        fprintf(stderr, "Erro ao criar filho\n");
+        exit(-1);
+    }
+    // Child
+    if (pid == 0) {
+        char* args[] = {argv[2], NULL};
+        execve(argv[2], args, 0); /* ou sleep(3);*/
+    }
+    // Parent
+    else {
+        sscanf(argv[1], "%d", &delay); /* read delay from command line */
+        sleep(delay);
+        printf("Program %s exceeded limit of %d seconds!\n", argv[2], delay);
+        kill(pid, SIGKILL);
+
+        sleep(1); /* necessary for SIGCHLD to arrive */
+    }
+
+    return 0;
+}
+
+/* Executed if child dies before parent */
+void childhandler(int signo) {
+    int status;
+
+    pid_t pid = wait(&status);
+    printf("Child %d terminated within %d seconds with status %d.\n", pid, delay, status);
+
+    exit(0);
+}
+
+ARQUIVO sleep5.c
+
+#include <stdio.h>
+#include <unistd.h>
+
+int main (void) {
+    fprintf(stdout, "Indo dormir...\n");
+    sleep(5);
+    fprintf(stdout, "Acordei!\n");
+    
+    return 0;
+}
+
+ARQUIVO sleep15.c
+
+#include <stdio.h>
+#include <unistd.h>
+
+int main (void) {
+    fprintf(stdout, "Indo dormir...\n");
+    sleep(15);
+    fprintf(stdout, "Acordei!\n");
+
+    return 0;
+}
+------------------------------------------------------------------------
+COMPILAÇÃO E EXECUÇÃO
+
+$ gcc -Wall -o filhocidio filhocidio.c
+$ gcc -Wall -o sleep5 sleep5.c
+$ gcc -Wall -o sleep15 sleep15.c
+$ ./filhocidio 10 ./sleep5 && ./filhocidio 10 ./sleep15
+------------------------------------------------------------------------
+RESULTADO
+
+Indo dormir...
+Acordei!
+Child 157235 terminated within 10 seconds with status 0.
+Indo dormir...
+Program ./sleep15 exceeded limit of 10 seconds!
+Child 157293 terminated within 10 seconds with status 9.
+------------------------------------------------------------------------
+CONCLUSÃO
+
+O programa cria um processo filho via fork() para rodar outro executável com execve() e define um tempo limite no processo pai através de sleep().
+Um handler é configurado para interceptar o sinal SIGCHLD, que é emitido pelo Kernel sempre que o filho termina.
+No caso do ./sleep5, o filho encerra antes do tempo limite, disparando o SIGCHLD que acorda o pai e executa o handler, recolhendo o término normal com status 0 via wait().
+No caso do ./sleep15, o filho ultrapassa o limite estipulado; o pai termina seu sleep(), avisa o estouro do tempo e mata o filho enviando SIGKILL.
+A morte forçada do filho gera o sinal SIGCHLD, fazendo o handler ser chamado para coletar o processo com status 9 (código do próprio SIGKILL).
+------------------------------------------------------------------------

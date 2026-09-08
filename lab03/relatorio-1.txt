@@ -1,5 +1,5 @@
 Guilherme Machado de Bragança Soares - 2410804
-João Pedro Capechi Telhado - 
+João Pedro Capechi Telhado - 2410535
 
 1) Execute o programa “ctrl-c.c”. Digite Ctrl-C e Ctrl-\. Analise o resultado.
 Neste mesmo programa, remova os comandos signal( ) e repita o teste anterior observando os resultados.

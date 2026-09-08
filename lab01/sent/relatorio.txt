@@ -1,5 +1,5 @@
 Guilherme Machado de Bragança Soares - 2410804
-João Pedro Capechi Telhado - 
+João Pedro Capechi Telhado - 2410535
 
 1) Faça um programa para criar dois processos, o pai escreve seu pid e espera o filho terminar e o filho escreve o seu pid e termina.
 ------------------------------------------------------------------------

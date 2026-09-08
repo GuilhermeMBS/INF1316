@@ -1,6 +1,3 @@
-/*
-* 3) Execute e explique o funcionamento de filhocidio.c.
-*/
 #include <unistd.h>
 #include <sys/wait.h>
 #include <signal.h>
