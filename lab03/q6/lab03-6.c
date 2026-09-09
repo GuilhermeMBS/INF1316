@@ -1,79 +1,91 @@
 /**
- * This program uses milliseconds as an abstraction for the seconds.
- * So a call with 30 seconds long will be represented as a
- * 30 milliseconds long call in here.
+ * Our program uses a time abstraction so that 1 ms represents 1 second 
+ * of simulated phone call.
  */
-#include <unistd.h>
-#include <sys/wait.h>
-#include <signal.h>
-#include <sys/ipc.h>
-#include <sys/stat.h>
-#include <time.h>
-#include <stdlib.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <signal.h>
+#include <time.h>
+#include <sys/wait.h>
+#include <sys/types.h>
+
+// Ensures atomic access and prevents compiler register caching
+typedef volatile sig_atomic_t Hflag;
+
+static Hflag call_started = 0;
+static Hflag call_ended = 0;
+
+static struct timespec start, end;
 
 
-struct timespec start, end;
-typedef unsigned long long ull;
-
-
-void estimate_price(double duration) {
-    double price = 0.0;
-    price = (duration * 2.0);
-    if (duration > 60) (price -= (duration - 60.0));
-    printf("=> Estimated Price: R$%.2lf\n", price / 100.0);
+void estimate_price(int call_id, double duration) {
+    double price = duration * 2.0;
+    if (duration > 60.0) price -= (duration - 60.0);
+    printf("=> Price: R$ %.2f\n\n", price / 100.0);
 }
 
 
-void make_call(ull time) {
-    struct timespec ts;
-    ts.tv_sec = 0;
-    ts.tv_nsec = (ull)time * 1e6;
-    pid_t ppid = getppid();
-
-    puts("[Call started]");
-    kill(ppid, SIGUSR1);
-    nanosleep(&ts, NULL);
-    puts("[Call ended]");
-    kill(ppid, SIGUSR2);
-}
-
-
-void handle_sig(int signal) {
-    if (signal == SIGUSR1) {
+void handle_child(int sig) {
+    if (sig == SIGUSR1) {
         timespec_get(&start, TIME_UTC);
+        call_started = 1;
     }
 
-    if (signal == SIGUSR2) {
+    else if (sig == SIGUSR2) {
         timespec_get(&end, TIME_UTC);
-        double elapsed = (end.tv_sec - start.tv_sec) * 1000.0 +
-                         (end.tv_nsec - start.tv_nsec) / 1e6;
-        printf("The call had %.2f seconds. Estimating it's price...\n", elapsed);
-        estimate_price(elapsed);
+        call_ended = 1;
     }
+}
+
+
+void child_routine(int call_id) {
+    signal(SIGUSR1, handle_child);
+    signal(SIGUSR2, handle_child);
+
+    while (!call_started) pause();
+    printf("[Call %d] Started\n", call_id);
+
+    while (!call_ended) pause();
+    double elapsed = (end.tv_sec - start.tv_sec) * 1000.0 +
+                     (end.tv_nsec - start.tv_nsec) / 1e6;
+    printf("[Call %d] Ended With %.2f\n", call_id, elapsed);
+    estimate_price(call_id, elapsed);
+
+    exit(0);
 }
 
 
 int main(void) {
-    if (signal(SIGUSR1, handle_sig) == SIG_ERR) {
-        perror("Error while starting a call.");
-        exit(1);
+    pid_t pids[3];
+
+    for (int i = 0; i < 3; i++) {
+        pids[i] = fork();
+
+        if (pids[i] < 0) {
+            perror("Fork failed");
+            exit(1);
+        }
+
+        else if (pids[i] == 0) child_routine(i + 1);
     }
 
-    if (signal(SIGUSR2, handle_sig) == SIG_ERR) {
-        perror("Error while ending the call");
-        exit(1);
-    }
+    usleep(20000); // Ensure all children have registered their signal handlers
+    for (int i = 0; i < 3; i++) kill(pids[i], SIGUSR1);
 
-    pid_t pid = fork();
+    // 55 seconds call (should cost around R$1,10)
+    usleep(55 * 1000);
+    kill(pids[1], SIGUSR2);
 
-    if (pid == 0) {
-        make_call(90); // One and a half minute
-        exit(1);
-    }
-    else if (pid < 0) perror("Error while forking the process");
+    // One minute and a half long call (should cost around R$1,50)
+    usleep(35 * 1000); // (90 - 55) seconds
+    kill(pids[0], SIGUSR2);
 
-    waitpid(pid, NULL, 0);
+    // 5 minutes call (should cost around R$3,60)
+    usleep(210 * 1000); // (300 - 55 - 35) seconds
+    kill(pids[2], SIGUSR2);
+
+    for (int i = 0; i < 3; i++) waitpid(pids[i], NULL, 0);
 
     return 0;
 }
