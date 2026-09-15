@@ -1,10 +1,3 @@
-/**
- * 7) Elabore três programas I/O bound que não terminem (loop de msgs no vídeo).
- * Elabore um programa que seja capaz de executar os 3 programas indicados anteriormente
- * e que simule o compartilhamento da CPU entre os 3 processos com escalonamento Round-Robin
- * com uma fatia de tempo de 1 segundo para o primeiro processo e de 2 segundos para os demais
- * processos. Execute os programas e relate o que aconteceu.
- */
 #include <unistd.h>
 #include <sys/wait.h>
 #include <signal.h>
@@ -19,16 +12,13 @@
 pid_t pids[QTDPROCESS];
 
 void handle_sig(int signal) {
-    if (signal == SIGINT)
-    {
-        puts("\nEnding child process...\n");
-        for (int i = 0; i < QTDPROCESS; i++)
-        {
-            kill(pids[i], SIGKILL);
-        }
-        puts("Ending parent process...\n");
+    if (signal == SIGINT) {
+        puts("\nEnding child process...");
+        for (int i = 0; i < QTDPROCESS; i++) kill(pids[i], SIGKILL);
+        puts("Ending parent process...");
         exit(0);
     }
+
     return;
 }
 
@@ -39,30 +29,38 @@ int main(void) {
         exit(1);
     }
 
-    char* sentences[] = {"[FILHO 1] Ola, sou o filho 1", "[FILHO 2] Teste do filho 2", "[FILHO 3] Agora o terceiro"};
+    char* sentences[] = {
+        "[FILHO 1] Ola, sou o filho 1",
+        "[FILHO 2] Teste do filho 2",
+        "[FILHO 3] Agora o terceiro"
+    };
 
-    for (int i =0; i < QTDPROCESS; i++)
-    {
-        if ((pids[i] = fork()) < 0) // Erro
-        {
-            perror("Error while forking the process");
+    for (int i = 0; i < QTDPROCESS; i++) {
+        pids[i] = fork();
+
+        // Erro
+        if (pids[i] < 0) {
+            perror("Fork failed");
+            exit(1);
         }
-        else if (pids[i] == 0) // Filho
-        {
+        
+        // Filho
+        else if (pids[i] == 0) {
             // Implementar o exec dos outros códigos
             char* args[] = {"./io1", sentences[i], NULL};
             execve("./io1", args, NULL);
+            perror("Erro no execve");
+            exit(1);
         }
-        else // Pai
-        {
-            kill(pids[i], SIGSTOP);
-        }
+
+        // Pai
+        else kill(pids[i], SIGSTOP);
     }
     
     unsigned int delay;
     int atual = 0; // Processo que assume o controle3
-    while (1)
-    {
+
+    while (1) {
         kill(pids[atual], SIGCONT);
         delay = (atual == 0) ? 1 : 2; // 1 sec para o primeiro processo, e 2 sec para os demais 
         sleep(delay);
