@@ -46,7 +46,6 @@ int main(void) {
         
         // Filho
         else if (pids[i] == 0) {
-            // Implementar o exec dos outros códigos
             char* args[] = {"./io1", sentences[i], NULL};
             execve("./io1", args, NULL);
             perror("Erro no execve");
