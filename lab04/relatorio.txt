@@ -1,0 +1,331 @@
+Guilherme Machado de Bragança Soares - 2410804
+João Pedro Capechi Telhado - 2410535
+
+1) Execute o programa “ctrl-c.c”. Digite Ctrl-C e Ctrl-\. Analise o resultado.
+Neste mesmo programa, remova os comandos signal( ) e repita o teste anterior observando os resultados.
+------------------------------------------------------------------------
+ARQUIVO ctrl-c.c
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <signal.h>
+
+#define AUTO 1
+
+
+void tratador_sinais(int sinal) {
+    switch (sinal) {
+        case SIGINT:
+            printf("\n[SIGINT %d] Você pressionou Ctrl-C. Processo continua ativo.\n", sinal);
+            break;
+
+        case SIGQUIT:
+            printf("\n[SIGQUIT %d] Você pressionou Ctrl-\\. Encerrando de forma limpa...\n", sinal);
+            exit(0);
+
+        default:
+            printf("\nSinal %d recebido sem ação definida.\n", sinal);
+            break;
+    }
+}
+
+void test_cmds() {
+    sleep(2);
+    raise(SIGINT);
+    raise(SIGINT);
+    sleep(2);
+    raise(SIGINT);
+    sleep(3);
+    raise(SIGQUIT);
+}
+
+void get_signal() {
+    while(1) pause();
+}
+
+int main(void) {
+    // Ctrl-C
+    if (signal(SIGINT, tratador_sinais) == SIG_ERR) {
+        perror("Erro ao registrar SIGINT");
+        exit(1);
+    }
+
+    // Ctrl-\ Signal
+    if (signal(SIGQUIT, tratador_sinais) == SIG_ERR) {
+        perror("Erro ao registrar SIGQUIT");
+        exit(1);
+    }
+
+    printf("Tratadores ativos.\n");
+    printf(" - Pressione Ctrl-C para testar a captura.\n");
+    printf(" - Pressione Ctrl-\\ para encerrar o programa.\n");
+
+    (AUTO) ? test_cmds() : get_signal();
+
+    return 0;
+}
+------------------------------------------------------------------------
+COMPILAÇÃO E EXECUÇÃO
+
+$ gcc -Wall -o ctrl-c ctrl-c.c && ./ctrl-c
+$ ./ctrl-c
+------------------------------------------------------------------------
+RESULTADO
+
+Tratadores ativos.
+ - Pressione Ctrl-C para testar a captura.
+ - Pressione Ctrl-\ para encerrar o programa.
+
+[SIGINT 2] Você pressionou Ctrl-C. Processo continua ativo.
+
+[SIGINT 2] Você pressionou Ctrl-C. Processo continua ativo.
+
+[SIGINT 2] Você pressionou Ctrl-C. Processo continua ativo.
+
+[SIGQUIT 3] Você pressionou Ctrl-\. Encerrando de forma limpa...
+------------------------------------------------------------------------
+CONCLUSÃO
+
+Por padrão, o comando Ctrl-C deveria matar o processo (comportamento que tem caso comente as funções signal), porém nosso handler sobrescreve esta tabela default do Kernel e impede isto.
+Como o comando Ctrl-\ não estava funcionando, colocamos uma flag para um procedimento automático, que dá um raise do sinal para o próprio processo. 
+------------------------------------------------------------------------
+
+
+2) Tente fazer um programa para interceptar o sinal SIGKILL. Você conseguiu? Explique.
+------------------------------------------------------------------------
+ARQUIVO intercept_kill.c
+
+#include <stdio.h>
+#include <signal.h>
+#include <stdlib.h>
+#include <unistd.h>
+
+
+void handler_kill(int sinal) {
+    printf("Tentando tratar o SIGKILL (%d)... Este texto nunca vai aparecer!\n", sinal);
+}
+
+int main(void) {
+    // Handler tenta interceptar o sinal SIGKILL
+    if (signal(SIGKILL, handler_kill) == SIG_ERR) {
+        printf("Erro ao registrar tratador para SIGKILL!\n");
+    } else {
+        printf("Conseguimos interceptar o SIGKILL!\n");
+    }
+
+    return 0;
+}
+------------------------------------------------------------------------
+COMPILAÇÃO E EXECUÇÃO
+
+$ gcc -Wall -o intercept_kill intercept_kill.c && ./intercept_kill
+------------------------------------------------------------------------
+RESULTADO
+
+Erro ao registrar tratador para SIGKILL!
+------------------------------------------------------------------------
+CONCLUSÃO
+
+Ao tentar sobrescrever o endereço do tratamento do SIGKILL na tabela do Kernel, o sistema impede, levantando o erro.
+Isto ocorre, pois o SIGKILL é enviado ao Kernel e executado por ele diretamente, invés de ser mandado de volta para o programa.
+Assim, ele se torna um sinal não bloqueável.
+------------------------------------------------------------------------
+
+
+3) Busca paralela em vetor:
+    - Faça um programa paralelo (com pelo menos 4 processos) para localizar uma chave em um vetor.
+    - Crie uma memória compartilhada com dados numéricos inteiros e desordenados e a divida pelo número de processos
+    - Cada processo deve procurar o dado na sua área de memória e informar a posição onde o dado foi localizado.
+------------------------------------------------------------------------
+ARQUIVO filhocidio.c
+
+#include <unistd.h>
+#include <sys/wait.h>
+#include <signal.h>
+#include <sys/ipc.h>
+#include <sys/shm.h>
+#include <sys/stat.h>
+#include <sys/wait.h>
+#include <stdlib.h>
+#include <stdio.h>
+
+void childhandler(int signo);
+int delay;
+
+int main (int argc, char *argv[]) {
+    pid_t pid;
+    signal(SIGCHLD, childhandler);
+
+    // Error
+    if ((pid = fork()) < 0) {
+        fprintf(stderr, "Erro ao criar filho\n");
+        exit(-1);
+    }
+    // Child
+    if (pid == 0) {
+        char* args[] = {argv[2], NULL};
+        execve(argv[2], args, 0); /* ou sleep(3);*/
+    }
+    // Parent
+    else {
+        sscanf(argv[1], "%d", &delay); /* read delay from command line */
+        sleep(delay);
+        printf("Program %s exceeded limit of %d seconds!\n", argv[2], delay);
+        kill(pid, SIGKILL);
+
+        sleep(1); /* necessary for SIGCHLD to arrive */
+    }
+
+    return 0;
+}
+
+/* Executed if child dies before parent */
+void childhandler(int signo) {
+    int status;
+
+    pid_t pid = wait(&status);
+    printf("Child %d terminated within %d seconds with status %d.\n", pid, delay, status);
+
+    exit(0);
+}
+
+ARQUIVO sleep5.c
+
+#include <stdio.h>
+#include <unistd.h>
+
+int main (void) {
+    fprintf(stdout, "Indo dormir...\n");
+    sleep(5);
+    fprintf(stdout, "Acordei!\n");
+    
+    return 0;
+}
+
+ARQUIVO sleep15.c
+
+#include <stdio.h>
+#include <unistd.h>
+
+int main (void) {
+    fprintf(stdout, "Indo dormir...\n");
+    sleep(15);
+    fprintf(stdout, "Acordei!\n");
+
+    return 0;
+}
+------------------------------------------------------------------------
+COMPILAÇÃO E EXECUÇÃO
+
+$ gcc -Wall -o filhocidio filhocidio.c
+$ gcc -Wall -o sleep5 sleep5.c
+$ gcc -Wall -o sleep15 sleep15.c
+$ ./filhocidio 10 ./sleep5 && ./filhocidio 10 ./sleep15
+------------------------------------------------------------------------
+RESULTADO
+
+Indo dormir...
+Acordei!
+Child 157235 terminated within 10 seconds with status 0.
+Indo dormir...
+Program ./sleep15 exceeded limit of 10 seconds!
+Child 157293 terminated within 10 seconds with status 9.
+------------------------------------------------------------------------
+CONCLUSÃO
+
+O programa cria um processo filho via fork() para rodar outro executável com execve() e define um tempo limite no processo pai através de sleep().
+Um handler é configurado para interceptar o sinal SIGCHLD, que é emitido pelo Kernel sempre que o filho termina.
+No caso do ./sleep5, o filho encerra antes do tempo limite, disparando o SIGCHLD que acorda o pai e executa o handler, recolhendo o término normal com status 0 via wait().
+No caso do ./sleep15, o filho ultrapassa o limite estipulado; o pai termina seu sleep(), avisa o estouro do tempo e mata o filho enviando SIGKILL.
+A morte forçada do filho gera o sinal SIGCHLD, fazendo o handler ser chamado para coletar o processo com status 9 (código do próprio SIGKILL).
+------------------------------------------------------------------------
+
+
+4) Usando SIGSTOP e SIGCONT faça um programa que crie 2 processos filho e alterne a execução dos filhos. Após 10 trocas de contexto, o processo pai mata os processos filho.
+OBS: Os processos filho são formados por loops infinitos.
+------------------------------------------------------------------------
+ARQUIVO lab03-4
+
+#include <unistd.h>
+#include <signal.h>
+#include <sys/wait.h>
+
+#include <stdio.h>
+#include <stdlib.h>
+
+#define QTD_FILHOS 2
+#define QTD_TROCAS 10
+#define EVER ;;
+
+int main(void)  {
+    pid_t pids[QTD_FILHOS]; // Processos filhos
+
+    for (int i = 0; i < QTD_FILHOS; i++) {
+        if ((pids[i] = fork()) < 0) {
+            puts("Erro ao criar o filho");
+            exit(3);
+        }
+
+        else if (pids[i] == 0) for(EVER); // Deixa filho rodando
+
+        else kill(pids[i], SIGSTOP);
+    }
+
+    // Alternando SIGSTOP e SIGCONT
+    for (int j = 0; j < QTD_TROCAS + 1; j++) {
+        int i = j % QTD_FILHOS;
+        sleep(1);
+        printf("[%d] Acordando filho %d\n", j, pids[i]);
+        kill(pids[i], SIGCONT);
+        sleep(2);
+        printf("[%d] Dormindo o filho %d\n", j, pids[i]);
+        kill(pids[i], SIGSTOP);
+    }
+
+    for (int i = 0; i < QTD_FILHOS; i++) {
+        sleep(1);
+        printf("Matando o processo %d\n", pids[i]);
+        sleep(1);
+        kill(pids[i], SIGKILL);
+    }
+
+    return 0;
+}
+------------------------------------------------------------------------
+COMPILAÇÃO E EXECUÇÃO
+
+$ gcc -Wall -o lab03-4 lab03-4.c && ./lab03-4
+------------------------------------------------------------------------
+RESULTADO
+
+[0] Acordando filho 164551
+[0] Dormindo o filho 164551
+[1] Acordando filho 164552
+[1] Dormindo o filho 164552
+[2] Acordando filho 164551
+[2] Dormindo o filho 164551
+[3] Acordando filho 164552
+[3] Dormindo o filho 164552
+[4] Acordando filho 164551
+[4] Dormindo o filho 164551
+[5] Acordando filho 164552
+[5] Dormindo o filho 164552
+[6] Acordando filho 164551
+[6] Dormindo o filho 164551
+[7] Acordando filho 164552
+[7] Dormindo o filho 164552
+[8] Acordando filho 164551
+[8] Dormindo o filho 164551
+[9] Acordando filho 164552
+[9] Dormindo o filho 164552
+[10] Acordando filho 164551
+[10] Dormindo o filho 164551
+Matando o processo 164551
+Matando o processo 164552
+------------------------------------------------------------------------
+CONCLUSÃO
+
+O programa cria dois processos filhos via fork() que executam em loop infinito e são imediatamente suspensos pelo pai com SIGSTOP.
+Em seguida, um laço alterna a execução entre eles através do índice j % QTD_FILHOS: a cada iteração, o pai acorda o filho da vez com SIGCONT, aguarda dois segundos para que ele execute e volta a suspendê-lo com SIGSTOP.
+Ao final das trocas estipuladas, o processo pai percorre o vetor de PIDs e encerra definitivamente ambos os filhos enviando o sinal SIGKILL.
