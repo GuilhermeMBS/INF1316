@@ -1,26 +1,25 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
-
 #include <sys/wait.h>
+
 
 int main() {
     int fd[2];
-    if (pipe(fd) < 0)
-    {
+
+    if (pipe(fd) < 0) {
         puts("Erro ao abrir o pipe");
         exit(1);
     }
 
     pid_t pids[2];
 
-    if ((pids[0] = fork()) < 0)
-    {
+    if ((pids[0] = fork()) < 0) {
         puts("Erro ao criar um filho");
         exit(2);
     }
-    else if (pids[0] == 0)
-    {
+
+    else if (pids[0] == 0) {
         // Filho -> Utilizar ps para escrever
         close(fd[0]); // Fechar a leitura da pipe
 
@@ -35,13 +34,12 @@ int main() {
         exit(3);
     }
 
-    if ((pids[1] = fork()) < 0)
-    {
+    if ((pids[1] = fork()) < 0) {
         puts("Erro ao criar um filho");
         exit(2);
     }
-    else if (pids[1] == 0)
-    {
+
+    else if (pids[1] == 0) {
         // Filho -> Utilizar wc para printar
         close(fd[1]); // Fechar a escrita da pipe
 

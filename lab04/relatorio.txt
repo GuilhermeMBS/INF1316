@@ -9,26 +9,27 @@ ARQUIVO pipe.c
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #define TAM_MSG 16
 
+
 int main() {
     int fd[2];
-    if (pipe(fd) < 0)
-    {
+
+    if (pipe(fd) < 0) {
         puts("Erro ao abrir a pipe");
         exit(1);
     }
 
     pid_t pid;
-    if ((pid = fork()) < 0)
-    {
+    if ((pid = fork()) < 0) {
         puts("Erro ao criar o filho");
         exit(2);
     }
-    else if (pid == 0)
-    {
+
+    else if (pid == 0) {
         // Filho
         close(fd[0]);
         const char txt_TX[TAM_MSG] = "Ola mundo!";
@@ -36,8 +37,8 @@ int main() {
         printf("Foram escritos %d dados\n", (int)sizeof txt_TX);
         close(fd[1]);
     }
-    else 
-    {
+
+    else {
         // Pai
         close(fd[1]);
         char txt_RX[TAM_MSG];
@@ -45,7 +46,10 @@ int main() {
         printf("Foram lidos %d dados\n", qtd);
         printf("%s\n", txt_RX);
         close(fd[0]);
+
+        wait(NULL); // Aguarda o filho
     }
+
     return 0;
 }
 ------------------------------------------------------------------------
@@ -131,7 +135,7 @@ RESULTADO (do cat)
 CONCLUSÃO
 
 Com essa atividade conseguimos exercitar como é alterar a saída/entrada padrão de um processo, podendo alterá-la para um arquivo, ou uma pipe, dentre outras.
-Ao contrário de usar fopen, fread e fwrite (os quais necessitariam de um ponteiro FILE), ao redirecionar a saida/entrada padrão para um arquivo, conseguimos usar as operações/funcções que usam esas saídas padrões (como printf) para escrever no arquivo.
+Ao contrário de usar fopen, fread e fwrite (os quais necessitariam de um ponteiro FILE), ao redirecionar a saida/entrada padrão para um arquivo, conseguimos usar as operações/funções que usam essas saídas padrões (como printf) para escrever no arquivo.
 ------------------------------------------------------------------------
 
 
@@ -145,26 +149,25 @@ ARQUIVO dup.c
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
-
 #include <sys/wait.h>
+
 
 int main() {
     int fd[2];
-    if (pipe(fd) < 0)
-    {
+
+    if (pipe(fd) < 0) {
         puts("Erro ao abrir o pipe");
         exit(1);
     }
 
     pid_t pids[2];
 
-    if ((pids[0] = fork()) < 0)
-    {
+    if ((pids[0] = fork()) < 0) {
         puts("Erro ao criar um filho");
         exit(2);
     }
-    else if (pids[0] == 0)
-    {
+
+    else if (pids[0] == 0) {
         // Filho -> Utilizar ps para escrever
         close(fd[0]); // Fechar a leitura da pipe
 
@@ -179,13 +182,12 @@ int main() {
         exit(3);
     }
 
-    if ((pids[1] = fork()) < 0)
-    {
+    if ((pids[1] = fork()) < 0) {
         puts("Erro ao criar um filho");
         exit(2);
     }
-    else if (pids[1] == 0)
-    {
+
+    else if (pids[1] == 0) {
         // Filho -> Utilizar wc para printar
         close(fd[1]); // Fechar a escrita da pipe
 
@@ -335,5 +337,7 @@ RESULTADO
 ------------------------------------------------------------------------
 CONCLUSÃO
 
-O programa cria 3 filhos (2 readers e 1 writer) que se comunicam através da mesma pipe.
-Essa lógica simula como 2 processos podem concorrer a um mesmo pipe para conseguir alguma informação.
+O experimento evidencia o balanceamento natural de carga e a garantia de atomicidade promovidos pelo Kernel em uma pipe concorrente.
+Como o escritor produz a cada 0,5s e cada leitor consome e processa por 1,0s, os dois leitores dividem a carga de forma intercalada: enquanto um leitor está em espera bloqueante pós-leitura, o Kernel entrega o próximo dado diretamente ao leitor que está desocupado aguardando na chamada read().
+Não houve corrupção de dados porque operações de leitura/escrita de tamanho sizeof(int) são menores que o limite de buffer atômico do POSIX (PIPE_BUF).
+Por fim, quando o escritor finaliza e fecha seu descritor, o Kernel envia o sinal de fim de arquivo (EOF) aos leitores, finalizando ambos de forma coordenada e limpa sem a necessidade de intervenção externa por sinais de controle (SIGSTOP/SIGCONT).
