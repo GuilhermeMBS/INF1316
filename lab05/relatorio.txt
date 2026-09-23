@@ -1,120 +1,156 @@
 Guilherme Machado de Bragança Soares - 2410804
 João Pedro Capechi Telhado - 2410535
 
-1) Faça um programa para criar dois processos que se comunicam via pipe.
-O Pai lê do pipe enquanto o filho escreve no pipe.
-Exiba o resultado do que foi escrito e lido.
+1) Abra duas seções de terminais:
+    - Na primeira, execute um programa que fica em loop lendo de uma FIFO para depois escrever na saída padrão (tela)
+    - Na segunda, execute um programa que fica lendo da entrada padrão (teclado) e depois escreve na mesma FIFO
 ------------------------------------------------------------------------
-ARQUIVO pipe.c
+ARQUIVO dados.h
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <sys/wait.h>
-#include <unistd.h>
+#pragma once
 
-#define TAM_MSG 16
+#define FIFOMODE (S_IRUSR | S_IWUSR)
 
-
-int main() {
-    int fd[2];
-
-    if (pipe(fd) < 0) {
-        puts("Erro ao abrir a pipe");
-        exit(1);
-    }
-
-    pid_t pid;
-    if ((pid = fork()) < 0) {
-        puts("Erro ao criar o filho");
-        exit(2);
-    }
-
-    else if (pid == 0) {
-        // Filho
-        close(fd[0]);
-        const char txt_TX[TAM_MSG] = "Ola mundo!";
-        write(fd[1], txt_TX, sizeof txt_TX);
-        printf("Foram escritos %d dados\n", (int)sizeof txt_TX);
-        close(fd[1]);
-    }
-
-    else {
-        // Pai
-        close(fd[1]);
-        char txt_RX[TAM_MSG];
-        int qtd = read(fd[0], txt_RX, sizeof txt_RX);
-        printf("Foram lidos %d dados\n", qtd);
-        printf("%s\n", txt_RX);
-        close(fd[0]);
-
-        wait(NULL); // Aguarda o filho
-    }
-
-    return 0;
-}
-------------------------------------------------------------------------
-COMPILAÇÃO E EXECUÇÃO
-
-$ gcc -Wall -o pipe pipe.c && ./pipe
-------------------------------------------------------------------------
-RESULTADO
-
-Foram escritos 16 dados
-Foram lidos 16 dados
-Ola mundo!
-------------------------------------------------------------------------
-CONCLUSÃO
-
-Através desse código, foi possível observar como a comunicação via pipe funciona entre 2 processos (um pai e um filho) e como ele difere de uma shared memory.
-Nesse código, conseguimos transmitir uma mensagem de até 15 caracteres (TAM_MSG - 1, por conta do '\0'), através da pipe.
-Essa mensagem será captada pelo pai, o qual poderá realizar algum processamento dado essa mensagem.
-------------------------------------------------------------------------
+#define FIFO "minhaFifo"
+#define TAM_FRASE 100
 
 
-2) Faça um programa para redirecionar a entrada e a saída, lendo os dados de um arquivo e gerando a saída em outro.
-------------------------------------------------------------------------
-ARQUIVO ex2.c
+ARQUIVO fifoReader.c
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+
+#include <sys/stat.h>
 #include <fcntl.h>
 
+#include <signal.h> // Para tratar o CTRL-C
 
-int main(int argc, char *argv[]) {
-    int fd_in, fd_out;
+#include "dados.h"
 
-    fd_in = open("in.txt", O_RDONLY);
-    if (fd_in < 0) {
-        perror("Error while opening in.txt");
-        exit(1);
+#define OPENMODE (O_RDONLY | O_NONBLOCK)
+
+int fifo_pt;
+
+void encerrar(int sinal)
+{
+    switch (sinal)
+    {
+        case SIGINT:
+            puts("\nFechando a FIFO...");
+            close(fifo_pt);
+            exit(0);
+
+        default:
+            puts("Signal não reconhecido");
+            break;
+    }
+}
+
+int main()
+{
+    if (signal(SIGINT, encerrar) == SIG_ERR) {
+        perror("Erro ao registrar SIGINT");
+        exit(-3);
     }
 
-    fd_out = open("out.txt", O_WRONLY | O_CREAT | O_TRUNC, 0644);
-    if (fd_out < 0) {
-        perror("Error while opening out.txt");
-        close(fd_in);
-        exit(1);
+    
+    if (access(FIFO, F_OK) == -1)
+    {
+        puts("Criando a FIFO...");
+        if (mkfifo(FIFO, FIFOMODE) != 0)
+        {
+            puts("Erro ao criar a FIFO");
+            return -1;
+        }
+    }
+    
+    puts("Abrindo a FIFO...");
+    if ((fifo_pt = open(FIFO, OPENMODE)) < 0)
+    {
+        puts("Erro ao abrir a FIFO");
+        return -2;
     }
 
-    if (dup2(fd_in, STDIN_FILENO) < 0) {
-        perror("Error in dup2 for stdin");
-        exit(1);
+    char chLeitura;
+
+    while (1)
+    {
+        while (read(fifo_pt, &chLeitura, sizeof(chLeitura)) > 0)
+        {
+            putchar(chLeitura);
+        }
     }
 
-    if (dup2(fd_out, STDOUT_FILENO) < 0) {
-        perror("Error in dup2 for stdout");
-        exit(1);
+    return 0;
+}
+
+
+ARQUIVO fifoWriter.c
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+
+#include <sys/stat.h>
+#include <fcntl.h>
+
+#include <signal.h> // Para tratar o CTRL-C
+
+#include "dados.h"
+
+#define OPENMODE (O_WRONLY | O_NONBLOCK)
+
+int fifo_pt;
+
+void encerrar(int sinal)
+{
+    switch (sinal)
+    {
+        case SIGINT:
+            puts("\nFechando a FIFO...");
+            close(fifo_pt);
+            exit(0);
+
+        default:
+            puts("Signal não reconhecido");
+            break;
+    }
+}
+
+int main()
+{
+    if (signal(SIGINT, encerrar) == SIG_ERR) {
+        perror("Erro ao registrar SIGINT");
+        exit(-3);
     }
 
-    close(fd_in);
-    close(fd_out);
-
-    char row[256];
-    int count = 1;
-
-    while (fgets(row, sizeof(row), stdin) != NULL) {
-        printf("[Row %02d]: %s", count++, row);
+    if (access(FIFO, F_OK) == -1)
+    {
+        puts("Criando a FIFO...");
+        if (mkfifo(FIFO, FIFOMODE) != 0)
+        {
+            puts("Erro ao criar a FIFO");
+            return -1;
+        }
+    }
+    
+    
+    puts("Abrindo a FIFO...");
+    if ((fifo_pt = open(FIFO, OPENMODE)) < 0)
+    {
+        puts("Erro ao abrir a FIFO");
+        return -2;
+    }
+    
+    char frase[TAM_FRASE];
+    printf("Digite a frase (de até %d char) que será transmitida: ", TAM_FRASE - 1);
+    while (1)
+    {
+        fgets(frase, sizeof(frase), stdin);
+        write(fifo_pt, frase, strlen(frase));
+        printf("Digite a frase (de até %d char) que será transmitida: ", TAM_FRASE - 1);
     }
 
     return 0;
@@ -122,126 +158,381 @@ int main(int argc, char *argv[]) {
 ------------------------------------------------------------------------
 COMPILAÇÃO E EXECUÇÃO
 
-Obs: O conteúdo original do arquivo "out.txt" será deletado ao executar
-$ gcc -Wall -o ex2 ex2.c && ./ex2
-$ cat out.txt
-------------------------------------------------------------------------
-RESULTADO (do cat)
+Terminal 1:
+$ gcc -Wall -o reader fifoReader.c && ./reader
 
-[Row 01]: First row
-[Row 02]: Second row
-[Row 03]: Third row
+Terminal 2:
+$ gcc -Wall -o writer fifoWriter.c && ./writer
+------------------------------------------------------------------------
+RESULTADO
+
+Terminal 1:
+Abrindo a FIFO...
+copom qap
+
+Terminal 2:
+Abrindo a FIFO...
+Digite a frase (de até 99 char) que será transmitida: copom qap
+Digite a frase (de até 99 char) que será transmitida:
 ------------------------------------------------------------------------
 CONCLUSÃO
 
-Com essa atividade conseguimos exercitar como é alterar a saída/entrada padrão de um processo, podendo alterá-la para um arquivo, ou uma pipe, dentre outras.
-Ao contrário de usar fopen, fread e fwrite (os quais necessitariam de um ponteiro FILE), ao redirecionar a saida/entrada padrão para um arquivo, conseguimos usar as operações/funções que usam essas saídas padrões (como printf) para escrever no arquivo.
+O código conecta dois programas independentes rodando em terminais diferentes através de uma FIFO.
+O escritor pega o texto digitado no teclado e joga na FIFO, enquanto o leitor fica lendo o arquivo em loop e imprimindo as mensagens na tela.
+O uso de O_NONBLOCK faz com que o leitor não fique travado esperando dados e exige que ele seja iniciado antes do escritor para que a abertura não falhe.
+O tratamento de SIGINT (Ctrl+C) serve para fechar o descritor da FIFO antes de encerrar o programa.
 ------------------------------------------------------------------------
 
 
-3) Faça um programa para criar um pipe e executar dois processos que são utilitários do Unix que se comuniquem através do pipe criado, assim como a shell faz.
-Exemplo:
-endler$ ps | wc
- 28 28 310
+2) Escreva um programa que primeiro cria uma FIFO e em seguida cria dois processos filho que escrevem uma string na FIFO.
+O pai dá um waitpid em seguida lê as strings desse FIFO e exibe na tela
 ------------------------------------------------------------------------
-ARQUIVO dup.c
+ARQUIVO dados.h
+
+#pragma once
+
+#include <fcntl.h>
+
+#define FIFOMODE (S_IRUSR | S_IWUSR)
+#define FIFO "minhaFifo"
+
+#define QTD_FILHOS 2
+
+
+ARQUIVO filhos.c
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+
+#include <sys/stat.h>
+#include <fcntl.h>
+
+#include "dados.h"
+
+#define OPENMODE (O_WRONLY | O_NONBLOCK)
+
+int main(int argc, char* argv[])
+{
+    if (argc != 2)
+    {
+        perror("It must have a string. Like: ./filhos olaBomDia");
+        exit(-3);
+    }
+
+    if (access(FIFO, F_OK) == -1)
+    {
+        puts("Criando a FIFO...");
+        if (mkfifo(FIFO, FIFOMODE) != 0)
+        {
+            perror("Erro ao criar a FIFO");
+            return -1;
+        }
+    }
+    
+    int fifo_pt;
+    puts("[FILHO] Abrindo a FIFO para escrita...");
+    if ((fifo_pt = open(FIFO, OPENMODE)) < 0)
+    {
+        perror("Erro ao abrir a FIFO");
+        return -2;
+    }
+    
+    write(fifo_pt, argv[1], strlen(argv[1]));
+
+    close(fifo_pt);
+
+    return 0;
+}
+
+
+ARQUIVO pai.c
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+
+#include <sys/stat.h>
 #include <sys/wait.h>
+#include <fcntl.h>
 
+#include "dados.h"
 
-int main() {
-    int fd[2];
+#define OPENMODE (O_RDONLY | O_NONBLOCK)
 
-    if (pipe(fd) < 0) {
-        puts("Erro ao abrir o pipe");
-        exit(1);
+int main()
+{    
+    if (access(FIFO, F_OK) == -1)
+    {
+        puts("Criando a FIFO...");
+        if (mkfifo(FIFO, FIFOMODE) != 0)
+        {
+            perror("Erro ao criar a FIFO");
+            return -1;
+        }
     }
-
-    pid_t pids[2];
-
-    if ((pids[0] = fork()) < 0) {
-        puts("Erro ao criar um filho");
-        exit(2);
-    }
-
-    else if (pids[0] == 0) {
-        // Filho -> Utilizar ps para escrever
-        close(fd[0]); // Fechar a leitura da pipe
-
-        // Utilizar o write da pipe como o out padrão
-        dup2(fd[1], 1);
-
-        close(fd[1]); // Evitar problemas
-
-        execlp("ps", "ps", NULL);
-
-        perror("Erro ao tentar executar ps");
-        exit(3);
-    }
-
-    if ((pids[1] = fork()) < 0) {
-        puts("Erro ao criar um filho");
-        exit(2);
-    }
-
-    else if (pids[1] == 0) {
-        // Filho -> Utilizar wc para printar
-        close(fd[1]); // Fechar a escrita da pipe
-
-        // Utilizar o read da pipe como in padrão
-        dup2(fd[0], 0);
-
-        close(fd[0]); // Evitar problemas
-
-        execlp("wc", "wc", NULL);
-
-        perror("Erro ao tentar executar wc");
-        exit(4);
-    }
-
-    close(fd[0]);
-    close(fd[1]);
-
-    for (int i = 0; i < 2; i++) waitpid(pids[i], NULL, 0);
     
+    int fifo_pt;
+    puts("[PAI] Abrindo a FIFO para leitura...");
+    if ((fifo_pt = open(FIFO, OPENMODE)) < 0)
+    {
+        perror("Erro ao abrir a FIFO");
+        return -2;
+    }
+    
+    pid_t pids[QTD_FILHOS];
+    for (int i = 0; i < QTD_FILHOS; i++)
+    {
+        if ((pids[i] = fork()) < 0)
+        {
+            perror("Erro ao criar um processo filho");
+            exit(-3);
+        }
+        if (pids[i] == 0)
+        {
+            const char* args[3] = {"./filhos", "bom\n", NULL};
+            execv("./filhos", (char*const*)args);
+            perror("Erro ao executar o arquivo");
+            exit(-4);
+        }
+    }
+
+    for (int i = 0; i < QTD_FILHOS; i++) waitpid(pids[i], NULL, 0);
+
+    char chLeitura;
+    printf("Frases recebidas via FIFO:\n");
+    while (read(fifo_pt, &chLeitura, sizeof(chLeitura)) > 0)
+    {
+        putchar(chLeitura);
+    }
+
+    close(fifo_pt);
     return 0;
 }
 ------------------------------------------------------------------------
 COMPILAÇÃO E EXECUÇÃO
 
-$ gcc -Wall -o dup dup.c && ./dup
+$ gcc -Wall -o filhos filhos.c && gcc -Wall -o pai pai.c && ./pai
 ------------------------------------------------------------------------
 RESULTADO
 
+Criando a FIFO...
+[PAI] Abrindo a FIFO para leitura...
+[FILHO] Abrindo a FIFO para escrita...
+[FILHO] Abrindo a FIFO para escrita...
+Frases recebidas via FIFO:
+bom
+bom
 ------------------------------------------------------------------------
 CONCLUSÃO
 
-Com esse código, observamos como a shell faz para que 2 processos usem, como entrada, a saída do outro.
-Com a pipe, redirecionamos a saída padrão de um dos filhos para a escrita da pipe, e no outro filho redirecionamos a leitura padrão para a leitura da pipe.
+O código faz com que dois processos escrevam na mesma FIFO ao mesmo tempo.
+O processo pai cria a FIFO e lança dois filhos usando fork() e execv().
+Cada filho escreve uma string na FIFO e encerra.
+Usando waitpid(), o pai espera os dois filhos terminarem antes de começar a ler, comprovando que as mensagens enviadas ficam armazenadas no buffer da FIFO e podem ser lidas depois pelo pai de uma vez só.
 ------------------------------------------------------------------------
 
 
-4) Faça um programa que cria dois processos leitores e um processo escritor 
-em uma mesma pipe. Faça o escritor dormir metade do tempo dos leitores, e mostre 
-como os leitores consomem os dados produzidos pelo escritor.
-Obs: não force uma alternância controlada por SIGSTOP/SIGCONT.
+3) Escreva um servidor e um cliente usando duasFIFOs: 
+uma para enviar strings para o servidor, e outra para transmitir as respostas de volta para os clientes. 
+O servidor deverá rodar em background e transformar cada palavra recebida de minusculas para maiúsculas.
+Obs: execute os seus clientes em terminais diferentes.
 ------------------------------------------------------------------------
-ARQUIVO ex4.c
+ARQUIVO dados.h
 
+#pragma once
+
+#include <stdio.h>
+#include <unistd.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+
+#define FIFOMODE (S_IRUSR | S_IWUSR)
+
+#define OPENMODE_R (O_RDONLY)
+#define OPENMODE_W (O_WRONLY)
+
+#define TAM_FRASE 100
+#define FIFO_Server2Client "FIFOW"
+#define FIFO_Client2Server "FIFOR"
+
+/**
+ * @brief isWrite 1 -> Modo de escrita; 0 -> Modo de leitura
+ */
+int abreFifo(const char* nameFifo, char isWrite)
+{
+    int tmp;
+    const char* tipo = (isWrite == 1) ? "escrita" : "leitura";
+    if (access(nameFifo, F_OK) == -1)
+    {
+        printf("Criando a FIFO para %s...\n", tipo);
+        if (mkfifo(nameFifo, FIFOMODE) != 0)
+        {
+            puts("Erro ao criar a FIFO");
+            return -1;
+        }
+    }
+    
+    printf("Abrindo a FIFO para %s...\n", tipo);
+    int mode = (isWrite == 1) ? OPENMODE_W : OPENMODE_R;
+    if ((tmp = open(nameFifo, mode)) < 0)
+    {
+        puts("Erro ao abrir a FIFO");
+        return -2;
+    }
+
+    return tmp;
+}
+
+
+ARQUIVO clients.c
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+
+#include <signal.h> // Para tratar o CTRL-C
+
+#include <string.h> // Para strlen
+#include <ctype.h> // Para o toupper()
+
+#include "dados.h"
+
+int fifoW_pt, fifoR_pt;
+
+void encerrar(int sinal)
+{
+    switch (sinal)
+    {
+        case SIGINT:
+            puts("\nFechando as FIFOs...");
+            close(fifoW_pt);
+            close(fifoR_pt);
+            exit(0);
+
+        default:
+            puts("Signal não reconhecido");
+            break;
+    }
+}
+
+int main()
+{
+    if (signal(SIGINT, encerrar) == SIG_ERR) {
+        perror("Erro ao registrar SIGINT");
+        exit(-3);
+    }
+
+    fifoR_pt = abreFifo(FIFO_Server2Client, 0);
+    if (fifoR_pt < 0) return fifoR_pt;
+
+    fifoW_pt = abreFifo(FIFO_Client2Server, 1);
+    if (fifoW_pt < 0) return fifoW_pt;
+
+    char fraseEscrita[TAM_FRASE];
+    while (1)
+    {
+        printf("Digite a frase (de até %d char) que será processada: ", TAM_FRASE - 1);
+        fgets(fraseEscrita, sizeof(fraseEscrita), stdin);
+        write(fifoW_pt, fraseEscrita, strlen(fraseEscrita));
+
+        read(fifoR_pt, fraseEscrita, sizeof(fraseEscrita));
+        printf("Frase processada: %s", fraseEscrita);
+    }
+
+    return 0;
+}
+
+
+ARQUIVO server.c
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+
+#include <signal.h> // Para tratar o CTRL-C
+
+#include <string.h> // Para strlen
+#include <ctype.h> // Para o toupper()
+
+#include "dados.h"
+
+int fifoW_pt, fifoR_pt;
+
+void encerrar(int sinal)
+{
+    switch (sinal)
+    {
+        case SIGINT:
+            puts("\nFechando as FIFOs...");
+            close(fifoW_pt);
+            close(fifoR_pt);
+            exit(0);
+
+        default:
+            puts("Signal não reconhecido");
+            break;
+    }
+}
+
+int main()
+{
+    if (signal(SIGINT, encerrar) == SIG_ERR) {
+        perror("Erro ao registrar SIGINT");
+        exit(-3);
+    }
+
+    fifoW_pt = abreFifo(FIFO_Server2Client, 1);
+    if (fifoW_pt < 0) return fifoW_pt;
+
+    fifoR_pt = abreFifo(FIFO_Client2Server, 0);
+    if (fifoR_pt < 0) return fifoR_pt;
+
+    char fraseLeitura[TAM_FRASE];
+    while (1)
+    {
+        if (read(fifoR_pt, fraseLeitura, sizeof(fraseLeitura)) > 0)
+        {
+            for (int i = 0; i < strlen(fraseLeitura); i++)
+            {
+                fraseLeitura[i] = toupper(fraseLeitura[i]);
+            }
+            write(fifoW_pt, fraseLeitura, strlen(fraseLeitura));
+        }
+    }
+
+    return 0;
+}
 ------------------------------------------------------------------------
 COMPILAÇÃO E EXECUÇÃO
 
-$ gcc -Wall -o ex4 ex4.c && ./ex4
+Terminal 1:
+$ gcc -Wall -o server server.c && ./server
+
+Terminal 2:
+$ gcc -Wall -o client clients.c && ./client
 ------------------------------------------------------------------------
 RESULTADO
 
+Terminal 1:
+Criando a FIFO para escrita...
+Abrindo a FIFO para escrita...
+Criando a FIFO para leitura...
+Abrindo a FIFO para leitura...
+
+Terminal 2:
+Abrindo a FIFO para leitura...
+Abrindo a FIFO para escrita...
+Digite a frase (de até 99 char) que será processada: copom qap
+Frase processada: COPOM QAP
+Digite a frase (de até 99 char) que será processada: na escuta?
+Frase processada: NA ESCUTA?
+Digite a frase (de até 99 char) que será processada: ^C
+Fechando as FIFOs...
 ------------------------------------------------------------------------
 CONCLUSÃO
 
-O experimento evidencia o balanceamento natural de carga e a garantia de atomicidade promovidos pelo Kernel em uma pipe concorrente.
-Como o escritor produz a cada 0,5s e cada leitor consome e processa por 1,0s, os dois leitores dividem a carga de forma intercalada: enquanto um leitor está em espera bloqueante pós-leitura, o Kernel entrega o próximo dado diretamente ao leitor que está desocupado aguardando na chamada read().
-Não houve corrupção de dados porque operações de leitura/escrita de tamanho sizeof(int) são menores que o limite de buffer atômico do POSIX (PIPE_BUF).
-Por fim, quando o escritor finaliza e fecha seu descritor, o Kernel envia o sinal de fim de arquivo (EOF) aos leitores, finalizando ambos de forma coordenada e limpa sem a necessidade de intervenção externa por sinais de controle (SIGSTOP/SIGCONT).
+Como uma FIFO só trafega dados em um único sentido, usamos duas FIFOs para fazer a comunicação de ida e volta entre cliente e servidor.
+O cliente lê uma frase do teclado e manda para o servidor por uma FIFO; o servidor recebe, converte as letras para maiúsculas com toupper() e devolve a frase pela segunda FIFO para o cliente exibir na tela.
+A ordem de abertura dos arquivos foi invertida entre eles para garantir que nenhum dos processos ficasse travado esperando a conexão do outro.
