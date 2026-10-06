@@ -1,0 +1,241 @@
+Guilherme Machado de Bragança Soares - 2410804
+João Pedro Capechi Telhado - 2410535
+
+1) 
+------------------------------------------------------------------------
+ARQUIVO sapo.c
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <pthread.h>
+
+#define NUM_THREADS 5
+#define PULO_MAXIMO 100
+#define DESCANSO_MAXIMO 1
+#define DISTANCIA_PARA_CORRER 100
+
+
+static int classificacao = 1;
+static int cont = 0;
+
+void *Correr(void *sapo)
+{
+    int pulos = 0;
+    int distanciaJaCorrida = 0;
+    int* sapo_num = (int *) sapo;
+
+    while (distanciaJaCorrida <= DISTANCIA_PARA_CORRER) {
+        int pulo = rand() % PULO_MAXIMO;
+        distanciaJaCorrida += pulo;
+        pulos++;
+
+        printf("Sapo %d pulou\n", *sapo_num);
+
+        int descanso = rand() % DESCANSO_MAXIMO;
+        sleep(descanso);
+    }
+
+    printf("Sapo %d chegou na posicao %d com %d pulos\n", *sapo_num, classificacao, pulos);
+    cont++;
+    classificacao++;
+    pthread_exit(NULL);
+}
+
+int main()
+{
+    classificacao =1;
+    pthread_t threads[NUM_THREADS];
+    int t;
+
+    printf("Corrida iniciada ... \n");
+
+    int nums[NUM_THREADS];
+    for (int i = 0; i < NUM_THREADS; i++) nums[i] = i;
+
+    for(t=0;t < NUM_THREADS;t++) pthread_create(&threads[t], NULL, Correr, (void *) &nums[t]);
+    for(t=0;t < NUM_THREADS; t++) pthread_join(threads[t],NULL);
+
+    printf("\n Acabou!!\n");
+    pthread_exit(NULL);
+    return 0;
+}
+------------------------------------------------------------------------
+COMPILAÇÃO E EXECUÇÃO
+
+$ gcc -Wall -lpthread -o sapo sapo.c && ./sapo
+------------------------------------------------------------------------
+RESULTADO
+
+(Primeira vez)
+Corrida iniciada ... 
+Sapo 0 pulou
+Sapo 2 pulou
+Sapo 3 pulou
+Sapo 1 pulou
+Sapo 4 pulou
+Sapo 0 pulou
+Sapo 2 pulou
+Sapo 3 pulou
+Sapo 1 pulou
+Sapo 2 chegou na posicao 1 com 2 pulos
+Sapo 4 pulou
+Sapo 1 pulou
+Sapo 3 chegou na posicao 2 com 2 pulos
+Sapo 0 chegou na posicao 3 com 2 pulos
+Sapo 4 pulou
+Sapo 1 pulou
+Sapo 1 chegou na posicao 4 com 4 pulos
+Sapo 4 chegou na posicao 4 com 3 pulos
+
+ Acabou!!
+
+(Segunda vez)
+Corrida iniciada ... 
+Sapo 0 pulou
+Sapo 2 pulou
+Sapo 3 pulou
+Sapo 1 pulou
+Sapo 2 pulou
+Sapo 0 pulou
+Sapo 4 pulou
+Sapo 3 pulou
+Sapo 2 chegou na posicao 1 com 2 pulos
+Sapo 1 pulou
+Sapo 0 chegou na posicao 2 com 2 pulos
+Sapo 4 pulou
+Sapo 3 chegou na posicao 3 com 2 pulos
+Sapo 4 chegou na posicao 4 com 2 pulos
+Sapo 1 pulou
+Sapo 1 pulou
+Sapo 1 chegou na posicao 5 com 4 pulos
+
+ Acabou!!
+------------------------------------------------------------------------
+CONCLUSÃO
+
+Após executar algumas vezes, observa-se uma condição de corrida para acessar o valor
+da variável classificacao, em que múltiplas threads pegam o mesmo valor e o alteram (ao mesmo tempo),
+mas apenas o valor da thread mais lenta é salvo.
+------------------------------------------------------------------------
+
+
+2) Usando mutex, modifique o programa Corrida de Sampo
+para que o problema identificado anteriormente não ocorra.
+------------------------------------------------------------------------
+ARQUIVO sapo.c
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <pthread.h>
+
+#define NUM_THREADS 5
+#define PULO_MAXIMO 100
+#define DESCANSO_MAXIMO 1
+#define DISTANCIA_PARA_CORRER 100
+
+
+static int classificacao = 1;
+static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
+static int cont = 0;
+
+void *Correr(void *sapo)
+{
+    int pulos = 0;
+    int distanciaJaCorrida = 0;
+    int* sapo_num = (int *) sapo;
+
+    while (distanciaJaCorrida <= DISTANCIA_PARA_CORRER) {
+        int pulo = rand() % PULO_MAXIMO;
+        distanciaJaCorrida += pulo;
+        pulos++;
+
+        printf("Sapo %d pulou\n", *sapo_num);
+
+        int descanso = rand() % DESCANSO_MAXIMO;
+        sleep(descanso);
+    }
+
+    pthread_mutex_lock(&lock);
+    
+    printf("Sapo %d chegou na posicao %d com %d pulos\n", *sapo_num, classificacao, pulos);
+    cont++;
+    classificacao++;
+
+    pthread_mutex_unlock(&lock);
+    pthread_exit(NULL);
+}
+
+int main()
+{
+    classificacao =1;
+    pthread_t threads[NUM_THREADS];
+    int t;
+
+    printf("Corrida iniciada ... \n");
+
+    int nums[NUM_THREADS];
+    for (int i = 0; i < NUM_THREADS; i++) nums[i] = i;
+
+    for(t=0;t < NUM_THREADS;t++) pthread_create(&threads[t], NULL, Correr, (void *) &nums[t]);
+    for(t=0;t < NUM_THREADS; t++) pthread_join(threads[t],NULL);
+
+    printf("\n Acabou!!\n");
+    pthread_exit(NULL);
+    return 0;
+}
+------------------------------------------------------------------------
+COMPILAÇÃO E EXECUÇÃO
+
+$ gcc -Wall -lpthread -o sapo sapo.c && ./sapo
+------------------------------------------------------------------------
+RESULTADO
+
+Corrida iniciada ... 
+Sapo 0 pulou
+Sapo 2 pulou
+Sapo 3 pulou
+Sapo 0 pulou
+Sapo 2 pulou
+Sapo 1 pulou
+Sapo 4 pulou
+Sapo 0 chegou na posicao 1 com 2 pulos
+Sapo 2 chegou na posicao 2 com 2 pulos
+Sapo 1 pulou
+Sapo 3 pulou
+Sapo 4 pulou
+Sapo 1 chegou na posicao 3 com 2 pulos
+Sapo 3 chegou na posicao 4 com 2 pulos
+Sapo 4 chegou na posicao 5 com 2 pulos
+
+ Acabou!!
+------------------------------------------------------------------------
+CONCLUSÃO
+
+Ao adicionar a mutex (que no código tem o nome lock), impede com que 2, ou mais, threads acessem
+a região crítica, que no caso é a variável "classificacao". Dessa forma, teremos um output em 
+ordem crescente de posicao, sem repetição de posicao.
+------------------------------------------------------------------------
+
+
+3) Usando threads, escreva um programa C que implemente o problema do produtor/consumidor. O produtor deve produzir
+dados (números inteiros pseudo-aleatórios) a cada 1 segundo colocando-os em uma fila (buffer, implementação circular). O
+consumidor deve retirar dados da fila a cada 2 segundos. O tamanho máximo da fila deve ser de 8 elementos (MAXFILA) e
+tanto o produtor como o consumidor devem produzir/consumir 64 elementos (números inteiros de 1 a 64, por exemplo)
+evitando condições de corrida. Variáveis compartilhadas entre threads são simplesmente variáveis globais.
+------------------------------------------------------------------------
+ARQUIVO 
+
+
+------------------------------------------------------------------------
+COMPILAÇÃO E EXECUÇÃO
+
+
+------------------------------------------------------------------------
+RESULTADO
+
+
+------------------------------------------------------------------------
+CONCLUSÃO
+
