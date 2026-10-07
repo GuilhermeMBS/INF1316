@@ -1,10 +1,7 @@
-1) Execute o programa Corrida de Sapo algumas vezes e 
-analise os resultados sobre a ordem de chegada dos
-sapos. Obs: compile com a opção –lpthread
+1) Execute o programa Corrida de Sapo algumas vezes e analise os resultados sobre a ordem de chegada dos sapos.
+Obs: compile com a opção –lpthread
 
-2) Usando mutex, modifique o programa Corrida de Sampo
-para que o problema identificado anteriormente não
-ocorra.
+2) Usando mutex, modifique o programa Corrida de Sampo para que o problema identificado anteriormente não ocorra.
 
 3) Usando threads, escreva um programa C que implemente o problema do produtor/consumidor. O produtor deve produzir
 dados (números inteiros pseudo-aleatórios) a cada 1 segundo colocando-os em uma fila (buffer, implementação circular). O
@@ -12,6 +9,5 @@ consumidor deve retirar dados da fila a cada 2 segundos. O tamanho máximo da fi
 tanto o produtor como o consumidor devem produzir/consumir 64 elementos (números inteiros de 1 a 64, por exemplo)
 evitando condições de corrida. Variáveis compartilhadas entre threads são simplesmente variáveis globais.
 
-4) Modifique o programa anterior, para que haja 2 (ou mais)
-threads consumidor e 2 (ou mais) threads produtor. O que muda
-em relação ao uso do mutex e da variável de condição?
+4) Modifique o programa anterior, para que haja 2 (ou mais) threads consumidor e 2 (ou mais) threads produtor.
+O que muda em relação ao uso do mutex e da variável de condição?

@@ -1,7 +1,8 @@
 Guilherme Machado de Bragança Soares - 2410804
 João Pedro Capechi Telhado - 2410535
 
-1) 
+1) Execute o programa Corrida de Sapo algumas vezes e analise os resultados sobre a ordem de chegada dos sapos.
+Obs: compile com a opção –lpthread
 ------------------------------------------------------------------------
 ARQUIVO sapo.c
 
@@ -120,8 +121,7 @@ mas apenas o valor da thread mais lenta é salvo.
 ------------------------------------------------------------------------
 
 
-2) Usando mutex, modifique o programa Corrida de Sampo
-para que o problema identificado anteriormente não ocorra.
+2) Usando mutex, modifique o programa Corrida de Sampo para que o problema identificado anteriormente não ocorra.
 ------------------------------------------------------------------------
 ARQUIVO sapo.c
 
@@ -225,17 +225,471 @@ consumidor deve retirar dados da fila a cada 2 segundos. O tamanho máximo da fi
 tanto o produtor como o consumidor devem produzir/consumir 64 elementos (números inteiros de 1 a 64, por exemplo)
 evitando condições de corrida. Variáveis compartilhadas entre threads são simplesmente variáveis globais.
 ------------------------------------------------------------------------
-ARQUIVO 
+ARQUIVO produtorConsumidor.c
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <pthread.h>
+#include <unistd.h>
+#include <time.h>
+
+#define MAXFILA 8
+#define TOTAL_ELEMENTOS 64
 
 
+int fila[MAXFILA];
+int in = 0;     // Índice de inserção (produtor)
+int out = 0;    // Índice de remoção (consumidor)
+int count = 0;  // Quantidade atual de elementos na fila
+
+pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t cond_produtor = PTHREAD_COND_INITIALIZER;
+pthread_cond_t cond_consumidor = PTHREAD_COND_INITIALIZER;
+
+void* produtor(void* arg) {
+    for (int i = 0; i < TOTAL_ELEMENTOS; i++) {
+        int item = rand() % 100; // Número pseudo-aleatório
+
+        pthread_mutex_lock(&mutex); // Bloqueia acesso à fila
+
+        // Se a fila estiver cheia, o produtor dorme e libera o mutex
+        while (count == MAXFILA) {
+            pthread_cond_wait(&cond_produtor, &mutex);
+        }
+
+        // Insere na fila circular
+        fila[in] = item;
+        printf("[PRODUTOR] Inseriu: %d \t(Pos: %d | Total na fila: %d)\n", item, in, count + 1);
+        in = (in + 1) % MAXFILA;
+        count++;
+
+        // Avisa o consumidor que há um novo item na fila
+        pthread_cond_signal(&cond_consumidor);
+        
+        pthread_mutex_unlock(&mutex); // Libera o acesso à fila
+
+        sleep(1);
+    }
+    return NULL;
+}
+
+void* consumidor(void* arg) {
+    for (int i = 0; i < TOTAL_ELEMENTOS; i++) {
+        pthread_mutex_lock(&mutex); // Bloqueia acesso à fila
+
+        // Se a fila estiver vazia, o consumidor dorme e libera o mutex
+        while (count == 0) {
+            pthread_cond_wait(&cond_consumidor, &mutex);
+        }
+
+        // Retira da fila circular
+        int item = fila[out];
+        printf("[CONSUMIDOR] Retirou: %d \t(Pos: %d | Total na fila: %d)\n", item, out, count - 1);
+        out = (out + 1) % MAXFILA;
+        count--;
+
+        // Avisa o produtor que abriu espaço na fila
+        pthread_cond_signal(&cond_produtor);
+        
+        pthread_mutex_unlock(&mutex); // Libera o acesso à fila
+
+        sleep(2);
+    }
+    return NULL;
+}
+
+int main() {
+    pthread_t thread_prod, thread_cons;
+    srand(time(NULL));
+
+    pthread_create(&thread_prod, NULL, produtor, NULL);
+    pthread_create(&thread_cons, NULL, consumidor, NULL);
+
+    pthread_join(thread_prod, NULL);
+    pthread_join(thread_cons, NULL);
+
+    printf("\nExecução finalizada. Total produzido/consumido: %d\n", TOTAL_ELEMENTOS);
+    return 0;
+}
 ------------------------------------------------------------------------
 COMPILAÇÃO E EXECUÇÃO
 
-
+$ gcc -Wall -o produtorConsumidor produtorConsumidor.c && ./produtorConsumidor
 ------------------------------------------------------------------------
 RESULTADO
 
+[PRODUTOR] Inseriu: 99  (Pos: 0 | Total na fila: 1)
+[CONSUMIDOR] Retirou: 99        (Pos: 0 | Total na fila: 0)
+[PRODUTOR] Inseriu: 2   (Pos: 1 | Total na fila: 1)
+[CONSUMIDOR] Retirou: 2         (Pos: 1 | Total na fila: 0)
+[PRODUTOR] Inseriu: 24  (Pos: 2 | Total na fila: 1)
+[PRODUTOR] Inseriu: 11  (Pos: 3 | Total na fila: 2)
+[CONSUMIDOR] Retirou: 24        (Pos: 2 | Total na fila: 1)
+[PRODUTOR] Inseriu: 97  (Pos: 4 | Total na fila: 2)
+[PRODUTOR] Inseriu: 61  (Pos: 5 | Total na fila: 3)
+[CONSUMIDOR] Retirou: 11        (Pos: 3 | Total na fila: 2)
+[PRODUTOR] Inseriu: 82  (Pos: 6 | Total na fila: 3)
+[PRODUTOR] Inseriu: 29  (Pos: 7 | Total na fila: 4)
+[CONSUMIDOR] Retirou: 97        (Pos: 4 | Total na fila: 3)
+[PRODUTOR] Inseriu: 86  (Pos: 0 | Total na fila: 4)
+[PRODUTOR] Inseriu: 86  (Pos: 1 | Total na fila: 5)
+[CONSUMIDOR] Retirou: 61        (Pos: 5 | Total na fila: 4)
+[PRODUTOR] Inseriu: 78  (Pos: 2 | Total na fila: 5)
+[PRODUTOR] Inseriu: 20  (Pos: 3 | Total na fila: 6)
+[CONSUMIDOR] Retirou: 82        (Pos: 6 | Total na fila: 5)
+[PRODUTOR] Inseriu: 57  (Pos: 4 | Total na fila: 6)
+[PRODUTOR] Inseriu: 27  (Pos: 5 | Total na fila: 7)
+[CONSUMIDOR] Retirou: 29        (Pos: 7 | Total na fila: 6)
+[PRODUTOR] Inseriu: 21  (Pos: 6 | Total na fila: 7)
+[PRODUTOR] Inseriu: 40  (Pos: 7 | Total na fila: 8)
+[CONSUMIDOR] Retirou: 86        (Pos: 0 | Total na fila: 7)
+[PRODUTOR] Inseriu: 9   (Pos: 0 | Total na fila: 8)
+[CONSUMIDOR] Retirou: 86        (Pos: 1 | Total na fila: 7)
+[PRODUTOR] Inseriu: 58  (Pos: 1 | Total na fila: 8)
+[CONSUMIDOR] Retirou: 78        (Pos: 2 | Total na fila: 7)
+[PRODUTOR] Inseriu: 77  (Pos: 2 | Total na fila: 8)
+[CONSUMIDOR] Retirou: 20        (Pos: 3 | Total na fila: 7)
+[PRODUTOR] Inseriu: 64  (Pos: 3 | Total na fila: 8)
+[CONSUMIDOR] Retirou: 57        (Pos: 4 | Total na fila: 7)
+[PRODUTOR] Inseriu: 49  (Pos: 4 | Total na fila: 8)
+[CONSUMIDOR] Retirou: 27        (Pos: 5 | Total na fila: 7)
+[PRODUTOR] Inseriu: 27  (Pos: 5 | Total na fila: 8)
+[CONSUMIDOR] Retirou: 21        (Pos: 6 | Total na fila: 7)
+[PRODUTOR] Inseriu: 93  (Pos: 6 | Total na fila: 8)
+[CONSUMIDOR] Retirou: 40        (Pos: 7 | Total na fila: 7)
+[PRODUTOR] Inseriu: 3   (Pos: 7 | Total na fila: 8)
+[CONSUMIDOR] Retirou: 9         (Pos: 0 | Total na fila: 7)
+[PRODUTOR] Inseriu: 32  (Pos: 0 | Total na fila: 8)
+[CONSUMIDOR] Retirou: 58        (Pos: 1 | Total na fila: 7)
+[PRODUTOR] Inseriu: 74  (Pos: 1 | Total na fila: 8)
+[CONSUMIDOR] Retirou: 77        (Pos: 2 | Total na fila: 7)
+[PRODUTOR] Inseriu: 79  (Pos: 2 | Total na fila: 8)
+[CONSUMIDOR] Retirou: 64        (Pos: 3 | Total na fila: 7)
+[PRODUTOR] Inseriu: 56  (Pos: 3 | Total na fila: 8)
+[CONSUMIDOR] Retirou: 49        (Pos: 4 | Total na fila: 7)
+[PRODUTOR] Inseriu: 6   (Pos: 4 | Total na fila: 8)
+[CONSUMIDOR] Retirou: 27        (Pos: 5 | Total na fila: 7)
+[PRODUTOR] Inseriu: 51  (Pos: 5 | Total na fila: 8)
+[CONSUMIDOR] Retirou: 93        (Pos: 6 | Total na fila: 7)
+[PRODUTOR] Inseriu: 99  (Pos: 6 | Total na fila: 8)
+[CONSUMIDOR] Retirou: 3         (Pos: 7 | Total na fila: 7)
+[PRODUTOR] Inseriu: 58  (Pos: 7 | Total na fila: 8)
+[CONSUMIDOR] Retirou: 32        (Pos: 0 | Total na fila: 7)
+[PRODUTOR] Inseriu: 6   (Pos: 0 | Total na fila: 8)
+[CONSUMIDOR] Retirou: 74        (Pos: 1 | Total na fila: 7)
+[PRODUTOR] Inseriu: 23  (Pos: 1 | Total na fila: 8)
+[CONSUMIDOR] Retirou: 79        (Pos: 2 | Total na fila: 7)
+[PRODUTOR] Inseriu: 69  (Pos: 2 | Total na fila: 8)
+[CONSUMIDOR] Retirou: 56        (Pos: 3 | Total na fila: 7)
+[PRODUTOR] Inseriu: 3   (Pos: 3 | Total na fila: 8)
+[CONSUMIDOR] Retirou: 6         (Pos: 4 | Total na fila: 7)
+[PRODUTOR] Inseriu: 84  (Pos: 4 | Total na fila: 8)
+[CONSUMIDOR] Retirou: 51        (Pos: 5 | Total na fila: 7)
+[PRODUTOR] Inseriu: 51  (Pos: 5 | Total na fila: 8)
+[CONSUMIDOR] Retirou: 99        (Pos: 6 | Total na fila: 7)
+[PRODUTOR] Inseriu: 84  (Pos: 6 | Total na fila: 8)
+[CONSUMIDOR] Retirou: 58        (Pos: 7 | Total na fila: 7)
+[PRODUTOR] Inseriu: 22  (Pos: 7 | Total na fila: 8)
+[CONSUMIDOR] Retirou: 6         (Pos: 0 | Total na fila: 7)
+[PRODUTOR] Inseriu: 89  (Pos: 0 | Total na fila: 8)
+[CONSUMIDOR] Retirou: 23        (Pos: 1 | Total na fila: 7)
+[PRODUTOR] Inseriu: 14  (Pos: 1 | Total na fila: 8)
+[CONSUMIDOR] Retirou: 69        (Pos: 2 | Total na fila: 7)
+[PRODUTOR] Inseriu: 42  (Pos: 2 | Total na fila: 8)
+[CONSUMIDOR] Retirou: 3         (Pos: 3 | Total na fila: 7)
+[PRODUTOR] Inseriu: 46  (Pos: 3 | Total na fila: 8)
+[CONSUMIDOR] Retirou: 84        (Pos: 4 | Total na fila: 7)
+[PRODUTOR] Inseriu: 41  (Pos: 4 | Total na fila: 8)
+[CONSUMIDOR] Retirou: 51        (Pos: 5 | Total na fila: 7)
+[PRODUTOR] Inseriu: 16  (Pos: 5 | Total na fila: 8)
+[CONSUMIDOR] Retirou: 84        (Pos: 6 | Total na fila: 7)
+[PRODUTOR] Inseriu: 86  (Pos: 6 | Total na fila: 8)
+[CONSUMIDOR] Retirou: 22        (Pos: 7 | Total na fila: 7)
+[PRODUTOR] Inseriu: 50  (Pos: 7 | Total na fila: 8)
+[CONSUMIDOR] Retirou: 89        (Pos: 0 | Total na fila: 7)
+[PRODUTOR] Inseriu: 74  (Pos: 0 | Total na fila: 8)
+[CONSUMIDOR] Retirou: 14        (Pos: 1 | Total na fila: 7)
+[PRODUTOR] Inseriu: 15  (Pos: 1 | Total na fila: 8)
+[CONSUMIDOR] Retirou: 42        (Pos: 2 | Total na fila: 7)
+[PRODUTOR] Inseriu: 67  (Pos: 2 | Total na fila: 8)
+[CONSUMIDOR] Retirou: 46        (Pos: 3 | Total na fila: 7)
+[PRODUTOR] Inseriu: 76  (Pos: 3 | Total na fila: 8)
+[CONSUMIDOR] Retirou: 41        (Pos: 4 | Total na fila: 7)
+[PRODUTOR] Inseriu: 42  (Pos: 4 | Total na fila: 8)
+[CONSUMIDOR] Retirou: 16        (Pos: 5 | Total na fila: 7)
+[PRODUTOR] Inseriu: 12  (Pos: 5 | Total na fila: 8)
+[CONSUMIDOR] Retirou: 86        (Pos: 6 | Total na fila: 7)
+[PRODUTOR] Inseriu: 79  (Pos: 6 | Total na fila: 8)
+[CONSUMIDOR] Retirou: 50        (Pos: 7 | Total na fila: 7)
+[PRODUTOR] Inseriu: 26  (Pos: 7 | Total na fila: 8)
+[CONSUMIDOR] Retirou: 74        (Pos: 0 | Total na fila: 7)
+[PRODUTOR] Inseriu: 86  (Pos: 0 | Total na fila: 8)
+[CONSUMIDOR] Retirou: 15        (Pos: 1 | Total na fila: 7)
+[PRODUTOR] Inseriu: 58  (Pos: 1 | Total na fila: 8)
+[CONSUMIDOR] Retirou: 67        (Pos: 2 | Total na fila: 7)
+[PRODUTOR] Inseriu: 82  (Pos: 2 | Total na fila: 8)
+[CONSUMIDOR] Retirou: 76        (Pos: 3 | Total na fila: 7)
+[PRODUTOR] Inseriu: 45  (Pos: 3 | Total na fila: 8)
+[CONSUMIDOR] Retirou: 42        (Pos: 4 | Total na fila: 7)
+[PRODUTOR] Inseriu: 62  (Pos: 4 | Total na fila: 8)
+[CONSUMIDOR] Retirou: 12        (Pos: 5 | Total na fila: 7)
+[PRODUTOR] Inseriu: 33  (Pos: 5 | Total na fila: 8)
+[CONSUMIDOR] Retirou: 79        (Pos: 6 | Total na fila: 7)
+[PRODUTOR] Inseriu: 3   (Pos: 6 | Total na fila: 8)
+[CONSUMIDOR] Retirou: 26        (Pos: 7 | Total na fila: 7)
+[PRODUTOR] Inseriu: 68  (Pos: 7 | Total na fila: 8)
+[CONSUMIDOR] Retirou: 86        (Pos: 0 | Total na fila: 7)
+[CONSUMIDOR] Retirou: 58        (Pos: 1 | Total na fila: 6)
+[CONSUMIDOR] Retirou: 82        (Pos: 2 | Total na fila: 5)
+[CONSUMIDOR] Retirou: 45        (Pos: 3 | Total na fila: 4)
+[CONSUMIDOR] Retirou: 62        (Pos: 4 | Total na fila: 3)
+[CONSUMIDOR] Retirou: 33        (Pos: 5 | Total na fila: 2)
+[CONSUMIDOR] Retirou: 3         (Pos: 6 | Total na fila: 1)
+[CONSUMIDOR] Retirou: 68        (Pos: 7 | Total na fila: 0)
 
+Execução finalizada. Total produzido/consumido: 64
 ------------------------------------------------------------------------
 CONCLUSÃO
 
+O uso do mutex garante a exclusão mútua ao acessar as variáveis compartilhadas (índices e contador da fila circular), prevenindo condições de corrida.
+As variáveis de condição (cond_produtor e cond_consumidor) eliminam a necessidade de espera ocupada (busy waiting): o produtor é suspenso se o buffer atinge o limite de 8 elementos, e o consumidor é suspenso se o buffer está vazio.
+A saída comprova a sincronização correta, com as threads acordando uma à outra via sinais apenas quando o estado da fila permite progresso.
+------------------------------------------------------------------------
+
+
+4) Modifique o programa anterior, para que haja 2 (ou mais) threads consumidor e 2 (ou mais) threads produtor.
+O que muda em relação ao uso do mutex e da variável de condição?
+------------------------------------------------------------------------
+ARQUIVO newProdutorConsumidor.c
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <pthread.h>
+#include <unistd.h>
+#include <time.h>
+
+#define MAXFILA 8
+#define TOTAL_ELEMENTOS 64
+#define NUM_PRODUTORES 2
+#define NUM_CONSUMIDORES 2
+
+
+int fila[MAXFILA];
+int in = 0, out = 0, count = 0;
+
+pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t cond_produtor = PTHREAD_COND_INITIALIZER;
+pthread_cond_t cond_consumidor = PTHREAD_COND_INITIALIZER;
+
+void* produtor(void* arg) {
+    long id = (long)arg;
+    int qtd_por_produtor = TOTAL_ELEMENTOS / NUM_PRODUTORES;
+
+    for (int i = 0; i < qtd_por_produtor; i++) {
+        int item = rand() % 100; 
+
+        pthread_mutex_lock(&mutex);
+
+        while (count == MAXFILA) {
+            pthread_cond_wait(&cond_produtor, &mutex);
+        }
+
+        fila[in] = item;
+        printf("[PRODUTOR %ld] Inseriu: %d \t(Pos: %d | Total: %d)\n", id, item, in, count + 1);
+        in = (in + 1) % MAXFILA;
+        count++;
+
+        pthread_cond_broadcast(&cond_consumidor);
+        pthread_mutex_unlock(&mutex);
+
+        sleep(1);
+    }
+    return NULL;
+}
+
+void* consumidor(void* arg) {
+    long id = (long)arg;
+    int qtd_por_consumidor = TOTAL_ELEMENTOS / NUM_CONSUMIDORES;
+
+    for (int i = 0; i < qtd_por_consumidor; i++) {
+        pthread_mutex_lock(&mutex);
+
+        while (count == 0) {
+            pthread_cond_wait(&cond_consumidor, &mutex);
+        }
+
+        int item = fila[out];
+        printf("\t[CONSUMIDOR %ld] Retirou: %d \t(Pos: %d | Total: %d)\n", id, item, out, count - 1);
+        out = (out + 1) % MAXFILA;
+        count--;
+
+        pthread_cond_broadcast(&cond_produtor);
+        pthread_mutex_unlock(&mutex);
+
+        sleep(2);
+    }
+    return NULL;
+}
+
+int main() {
+    pthread_t produtores[NUM_PRODUTORES];
+    pthread_t consumidores[NUM_CONSUMIDORES];
+    srand(time(NULL));
+
+    for (long i = 0; i < NUM_PRODUTORES; i++) {
+        pthread_create(&produtores[i], NULL, produtor, (void*)(i + 1));
+    }
+    for (long i = 0; i < NUM_CONSUMIDORES; i++) {
+        pthread_create(&consumidores[i], NULL, consumidor, (void*)(i + 1));
+    }
+
+    for (int i = 0; i < NUM_PRODUTORES; i++) {
+        pthread_join(produtores[i], NULL);
+    }
+    for (int i = 0; i < NUM_CONSUMIDORES; i++) {
+        pthread_join(consumidores[i], NULL);
+    }
+
+    return 0;
+}
+------------------------------------------------------------------------
+COMPILAÇÃO E EXECUÇÃO
+
+$ gcc -Wall -o newProdutorConsumidor newProdutorConsumidor.c && ./newProdutorConsumidor
+------------------------------------------------------------------------
+RESULTADO
+
+[PRODUTOR 1] Inseriu: 88        (Pos: 0 | Total: 1)
+[PRODUTOR 2] Inseriu: 79        (Pos: 1 | Total: 2)
+        [CONSUMIDOR 1] Retirou: 88      (Pos: 0 | Total: 1)
+        [CONSUMIDOR 2] Retirou: 79      (Pos: 1 | Total: 0)
+[PRODUTOR 1] Inseriu: 9         (Pos: 2 | Total: 1)
+[PRODUTOR 2] Inseriu: 88        (Pos: 3 | Total: 2)
+        [CONSUMIDOR 1] Retirou: 9       (Pos: 2 | Total: 1)
+        [CONSUMIDOR 2] Retirou: 88      (Pos: 3 | Total: 0)
+[PRODUTOR 1] Inseriu: 70        (Pos: 4 | Total: 1)
+[PRODUTOR 2] Inseriu: 88        (Pos: 5 | Total: 2)
+[PRODUTOR 1] Inseriu: 32        (Pos: 6 | Total: 3)
+[PRODUTOR 2] Inseriu: 27        (Pos: 7 | Total: 4)
+        [CONSUMIDOR 1] Retirou: 70      (Pos: 4 | Total: 3)
+        [CONSUMIDOR 2] Retirou: 88      (Pos: 5 | Total: 2)
+[PRODUTOR 1] Inseriu: 97        (Pos: 0 | Total: 3)
+[PRODUTOR 2] Inseriu: 58        (Pos: 1 | Total: 4)
+[PRODUTOR 2] Inseriu: 26        (Pos: 2 | Total: 5)
+[PRODUTOR 1] Inseriu: 62        (Pos: 3 | Total: 6)
+        [CONSUMIDOR 2] Retirou: 32      (Pos: 6 | Total: 5)
+        [CONSUMIDOR 1] Retirou: 27      (Pos: 7 | Total: 4)
+[PRODUTOR 2] Inseriu: 58        (Pos: 4 | Total: 5)
+[PRODUTOR 1] Inseriu: 70        (Pos: 5 | Total: 6)
+[PRODUTOR 2] Inseriu: 7         (Pos: 6 | Total: 7)
+[PRODUTOR 1] Inseriu: 0         (Pos: 7 | Total: 8)
+        [CONSUMIDOR 2] Retirou: 97      (Pos: 0 | Total: 7)
+        [CONSUMIDOR 1] Retirou: 58      (Pos: 1 | Total: 6)
+[PRODUTOR 2] Inseriu: 27        (Pos: 0 | Total: 7)
+[PRODUTOR 1] Inseriu: 31        (Pos: 1 | Total: 8)
+        [CONSUMIDOR 2] Retirou: 26      (Pos: 2 | Total: 7)
+[PRODUTOR 1] Inseriu: 15        (Pos: 2 | Total: 8)
+        [CONSUMIDOR 1] Retirou: 62      (Pos: 3 | Total: 7)
+[PRODUTOR 2] Inseriu: 9         (Pos: 3 | Total: 8)
+        [CONSUMIDOR 2] Retirou: 58      (Pos: 4 | Total: 7)
+[PRODUTOR 1] Inseriu: 93        (Pos: 4 | Total: 8)
+        [CONSUMIDOR 1] Retirou: 70      (Pos: 5 | Total: 7)
+[PRODUTOR 2] Inseriu: 94        (Pos: 5 | Total: 8)
+        [CONSUMIDOR 2] Retirou: 7       (Pos: 6 | Total: 7)
+[PRODUTOR 2] Inseriu: 54        (Pos: 6 | Total: 8)
+        [CONSUMIDOR 1] Retirou: 0       (Pos: 7 | Total: 7)
+[PRODUTOR 1] Inseriu: 92        (Pos: 7 | Total: 8)
+        [CONSUMIDOR 2] Retirou: 27      (Pos: 0 | Total: 7)
+[PRODUTOR 1] Inseriu: 75        (Pos: 0 | Total: 8)
+        [CONSUMIDOR 1] Retirou: 31      (Pos: 1 | Total: 7)
+[PRODUTOR 2] Inseriu: 28        (Pos: 1 | Total: 8)
+        [CONSUMIDOR 2] Retirou: 15      (Pos: 2 | Total: 7)
+[PRODUTOR 1] Inseriu: 66        (Pos: 2 | Total: 8)
+        [CONSUMIDOR 1] Retirou: 9       (Pos: 3 | Total: 7)
+[PRODUTOR 2] Inseriu: 10        (Pos: 3 | Total: 8)
+        [CONSUMIDOR 2] Retirou: 93      (Pos: 4 | Total: 7)
+[PRODUTOR 1] Inseriu: 85        (Pos: 4 | Total: 8)
+        [CONSUMIDOR 1] Retirou: 94      (Pos: 5 | Total: 7)
+[PRODUTOR 2] Inseriu: 75        (Pos: 5 | Total: 8)
+        [CONSUMIDOR 2] Retirou: 54      (Pos: 6 | Total: 7)
+        [CONSUMIDOR 1] Retirou: 92      (Pos: 7 | Total: 6)
+[PRODUTOR 2] Inseriu: 26        (Pos: 6 | Total: 7)
+[PRODUTOR 1] Inseriu: 76        (Pos: 7 | Total: 8)
+        [CONSUMIDOR 2] Retirou: 75      (Pos: 0 | Total: 7)
+[PRODUTOR 1] Inseriu: 86        (Pos: 0 | Total: 8)
+        [CONSUMIDOR 1] Retirou: 28      (Pos: 1 | Total: 7)
+[PRODUTOR 2] Inseriu: 6         (Pos: 1 | Total: 8)
+        [CONSUMIDOR 2] Retirou: 66      (Pos: 2 | Total: 7)
+[PRODUTOR 1] Inseriu: 66        (Pos: 2 | Total: 8)
+        [CONSUMIDOR 1] Retirou: 10      (Pos: 3 | Total: 7)
+[PRODUTOR 2] Inseriu: 76        (Pos: 3 | Total: 8)
+        [CONSUMIDOR 1] Retirou: 85      (Pos: 4 | Total: 7)
+[PRODUTOR 1] Inseriu: 74        (Pos: 4 | Total: 8)
+        [CONSUMIDOR 2] Retirou: 75      (Pos: 5 | Total: 7)
+[PRODUTOR 2] Inseriu: 99        (Pos: 5 | Total: 8)
+        [CONSUMIDOR 1] Retirou: 26      (Pos: 6 | Total: 7)
+[PRODUTOR 1] Inseriu: 55        (Pos: 6 | Total: 8)
+        [CONSUMIDOR 2] Retirou: 76      (Pos: 7 | Total: 7)
+[PRODUTOR 2] Inseriu: 23        (Pos: 7 | Total: 8)
+        [CONSUMIDOR 1] Retirou: 86      (Pos: 0 | Total: 7)
+[PRODUTOR 2] Inseriu: 33        (Pos: 0 | Total: 8)
+        [CONSUMIDOR 2] Retirou: 6       (Pos: 1 | Total: 7)
+[PRODUTOR 1] Inseriu: 57        (Pos: 1 | Total: 8)
+        [CONSUMIDOR 2] Retirou: 66      (Pos: 2 | Total: 7)
+[PRODUTOR 2] Inseriu: 85        (Pos: 2 | Total: 8)
+        [CONSUMIDOR 1] Retirou: 76      (Pos: 3 | Total: 7)
+[PRODUTOR 1] Inseriu: 67        (Pos: 3 | Total: 8)
+        [CONSUMIDOR 2] Retirou: 74      (Pos: 4 | Total: 7)
+[PRODUTOR 2] Inseriu: 3         (Pos: 4 | Total: 8)
+        [CONSUMIDOR 1] Retirou: 99      (Pos: 5 | Total: 7)
+[PRODUTOR 1] Inseriu: 44        (Pos: 5 | Total: 8)
+        [CONSUMIDOR 2] Retirou: 55      (Pos: 6 | Total: 7)
+        [CONSUMIDOR 1] Retirou: 23      (Pos: 7 | Total: 6)
+[PRODUTOR 2] Inseriu: 82        (Pos: 6 | Total: 7)
+[PRODUTOR 1] Inseriu: 67        (Pos: 7 | Total: 8)
+        [CONSUMIDOR 2] Retirou: 33      (Pos: 0 | Total: 7)
+[PRODUTOR 1] Inseriu: 27        (Pos: 0 | Total: 8)
+        [CONSUMIDOR 1] Retirou: 57      (Pos: 1 | Total: 7)
+[PRODUTOR 2] Inseriu: 34        (Pos: 1 | Total: 8)
+        [CONSUMIDOR 1] Retirou: 85      (Pos: 2 | Total: 7)
+[PRODUTOR 1] Inseriu: 91        (Pos: 2 | Total: 8)
+        [CONSUMIDOR 2] Retirou: 67      (Pos: 3 | Total: 7)
+[PRODUTOR 2] Inseriu: 73        (Pos: 3 | Total: 8)
+        [CONSUMIDOR 1] Retirou: 3       (Pos: 4 | Total: 7)
+[PRODUTOR 1] Inseriu: 35        (Pos: 4 | Total: 8)
+        [CONSUMIDOR 2] Retirou: 44      (Pos: 5 | Total: 7)
+[PRODUTOR 2] Inseriu: 81        (Pos: 5 | Total: 8)
+        [CONSUMIDOR 1] Retirou: 82      (Pos: 6 | Total: 7)
+[PRODUTOR 2] Inseriu: 61        (Pos: 6 | Total: 8)
+        [CONSUMIDOR 2] Retirou: 67      (Pos: 7 | Total: 7)
+[PRODUTOR 1] Inseriu: 27        (Pos: 7 | Total: 8)
+        [CONSUMIDOR 1] Retirou: 27      (Pos: 0 | Total: 7)
+[PRODUTOR 2] Inseriu: 10        (Pos: 0 | Total: 8)
+        [CONSUMIDOR 2] Retirou: 34      (Pos: 1 | Total: 7)
+[PRODUTOR 1] Inseriu: 45        (Pos: 1 | Total: 8)
+        [CONSUMIDOR 1] Retirou: 91      (Pos: 2 | Total: 7)
+[PRODUTOR 2] Inseriu: 71        (Pos: 2 | Total: 8)
+        [CONSUMIDOR 2] Retirou: 73      (Pos: 3 | Total: 7)
+[PRODUTOR 1] Inseriu: 48        (Pos: 3 | Total: 8)
+        [CONSUMIDOR 1] Retirou: 35      (Pos: 4 | Total: 7)
+[PRODUTOR 2] Inseriu: 72        (Pos: 4 | Total: 8)
+        [CONSUMIDOR 2] Retirou: 81      (Pos: 5 | Total: 7)
+[PRODUTOR 1] Inseriu: 48        (Pos: 5 | Total: 8)
+        [CONSUMIDOR 1] Retirou: 61      (Pos: 6 | Total: 7)
+[PRODUTOR 2] Inseriu: 26        (Pos: 6 | Total: 8)
+        [CONSUMIDOR 2] Retirou: 27      (Pos: 7 | Total: 7)
+[PRODUTOR 1] Inseriu: 30        (Pos: 7 | Total: 8)
+        [CONSUMIDOR 1] Retirou: 10      (Pos: 0 | Total: 7)
+        [CONSUMIDOR 2] Retirou: 45      (Pos: 1 | Total: 6)
+        [CONSUMIDOR 1] Retirou: 71      (Pos: 2 | Total: 5)
+        [CONSUMIDOR 2] Retirou: 48      (Pos: 3 | Total: 4)
+        [CONSUMIDOR 1] Retirou: 72      (Pos: 4 | Total: 3)
+        [CONSUMIDOR 2] Retirou: 48      (Pos: 5 | Total: 2)
+        [CONSUMIDOR 1] Retirou: 26      (Pos: 6 | Total: 1)
+        [CONSUMIDOR 2] Retirou: 30      (Pos: 7 | Total: 0)
+------------------------------------------------------------------------
+CONCLUSÃO
+
+Ao escalonar múltiplas threads produtoras e consumidoras, a principal mudança conceitual é a obrigatoriedade do uso do laço while (em vez de if) para verificar a variável de condição.
+Isso garante que, se uma thread for acordada mas perder o controle do mutex para outra thread concorrente antes de agir, ela reavaliará o estado da fila (cheia ou vazia) ao retomar o processamento, evitando acessos indevidos.
+Além disso, o uso de pthread_cond_broadcast em vez de signal torna-se mais seguro, pois acorda todas as threads bloqueadas, evitando cenários onde o sinal acorda a thread errada (ex: um produtor acordando outro produtor em vez de um consumidor) e cause um deadlock lógico.
