@@ -1,4 +1,4 @@
-#define _GNU_SOURCE // Nedded to use the flag MREMAP_MAYMOVE in mremap()
+#define _GNU_SOURCE // Needed to use the flag MREMAP_MAYMOVE in mremap()
 
 
 #include <stdio.h>

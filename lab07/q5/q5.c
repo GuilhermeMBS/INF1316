@@ -46,7 +46,7 @@ main(void)
     
     close(fd);
 
-    strcpy(&p[prev_size], new_text);
+    memcpy(&p[prev_size], new_text, strlen(new_text));
     puts("\nNew text successfully added!");
     printf("Previous Size: %zu bytes\nNew Size: %zu bytes.\n", 
            prev_size, new_size);

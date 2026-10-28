@@ -82,9 +82,9 @@ $ gcc -Wall -o q1 q1.c && ./q1
 ------------------------------------------------------------------------
 RESULTADO
 
-Step 0 | Stack Pointer: 0x5c238290f000
-Step 1 | Stack Pointer: 0x5c238290f008
-Step 2 | Stack Pointer: 0x5c238290f000
+Step 0 | Heap Pointer: 0x623b1af31000
+Step 1 | Heap Pointer: 0x623b1af31008
+Step 2 | Heap Pointer: 0x623b1af31000
 ------------------------------------------------------------------------
 CONCLUSÃO
 
@@ -173,7 +173,7 @@ main(int argc, char *argv[])
 ------------------------------------------------------------------------
 COMPILAÇÃO E EXECUÇÃO
 
-$ gcc -Wall -o q2 q2.c && ./q2 example
+$ gcc -Wall -o q2 q2.c && ./q2 example.c
 ------------------------------------------------------------------------
 RESULTADO
 
@@ -427,7 +427,7 @@ main(void)
 
 
 /**
- * Fill thr 4096 characters:
+ * Fill the 4096 characters:
  * --------------------------------------------------
  * --------------------------------------------------
  * --------------------------------------------------
@@ -1012,7 +1012,7 @@ Feito isso, basta chamar o mmap() passando já esse novo tamanho atualizado, gar
 ------------------------------------------------------------------------
 ARQUIVO q6.c
 
-#define _GNU_SOURCE // Nedded to use the flag MREMAP_MAYMOVE in mremap()
+#define _GNU_SOURCE // Needed to use the flag MREMAP_MAYMOVE in mremap()
 
 
 #include <stdio.h>
