@@ -1,0 +1,1096 @@
+Guilherme Machado de Bragança Soares - 2410804
+João Pedro Capechi Telhado - 2410535
+
+1) Faça um programa que usa myallocate para alocar e desalocar memória dinâmiamente.
+------------------------------------------------------------------------
+ARQUIVO q1.c
+
+#include <unistd.h>
+#include <stdio.h>
+#include <assert.h>
+
+#define STEPS 3                         // Number of steps including initial and final
+#define INC 8                           // Increment for second step
+#define m(i) ((char*)memorypool[i])     // Used to do calculus with assert
+
+
+void *memorypool[STEPS];
+
+
+void*
+myallocate(int n)
+{
+    return sbrk(n);
+}
+
+
+void
+init_memory_pool(void)
+{
+    memorypool[0] = sbrk(0);
+}
+
+
+void
+reset_memory_pool(void)
+{
+    /**
+     * The best way to reset would be to brk(memorypool[0]), but the statement
+     * explicitly asks to use the myallocate function to deallocate.
+     */
+    myallocate(-INC);
+    memorypool[STEPS - 1] = sbrk(0);
+}
+
+
+static inline int
+_print_memory(void)
+{
+    for(int i = 0; i < STEPS; i++) {
+        printf("Step %d | Heap Pointer: %p\n", i, memorypool[i]);
+    }
+
+    return 1;
+}
+
+
+int
+main(void)
+{
+    // Step 01: Initial Heap Pointer
+    init_memory_pool();
+
+    // Step 02: Increment of INC Bytes
+    myallocate(INC);
+    memorypool[1] = myallocate(0);      // Save the value in second element of array
+    assert(m(1) - m(0) == INC);         // New - Initial = Increment
+
+    // Step 03: Reset Heap Pointer
+    reset_memory_pool();
+    assert(m(0) == m(2));               // Initial = Final
+    
+    // Print the Pointers From Each Step
+    assert(_print_memory() == 1);
+
+    return 0;
+}
+
+------------------------------------------------------------------------
+COMPILAÇÃO E EXECUÇÃO
+
+$ gcc -Wall -o q1 q1.c && ./q1
+------------------------------------------------------------------------
+RESULTADO
+
+Step 0 | Stack Pointer: 0x5c238290f000
+Step 1 | Stack Pointer: 0x5c238290f008
+Step 2 | Stack Pointer: 0x5c238290f000
+------------------------------------------------------------------------
+CONCLUSÃO
+
+A alocação dinâmica funciona perfeitamente.
+No caso, guardamos os valores em um array para que pudessemos imprimi-los após o término dos testes, já que os prints alocam de maneira dinâmica um buffer na heap (o que afetaria os resultados).
+------------------------------------------------------------------------
+
+
+2) Execute map-exemplo.c passando o nome de um arquivo como parâmetro. Qual foi a novidade?
+------------------------------------------------------------------------
+ARQUIVO example.c
+
+#include <stdio.h>
+
+
+int
+main(void)
+{
+    puts("Hello World");
+
+    return 0;
+}
+
+
+ARQUIVO q2.c
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/mman.h>
+
+
+int
+main(int argc, char *argv[])
+{
+    struct stat sb;
+    off_t len;
+    char *p;
+    int fd;
+
+    if (argc < 2) {
+        fprintf(stderr, "usage: %s <file>\n", argv[0]);
+        exit(1);
+    }
+
+    fd = open(argv[1], O_RDONLY);
+    if (fd == -1) {
+        perror("open");
+        exit(1);
+    }
+
+    if (fstat(fd, &sb)== -1) {
+        perror("fstat");
+        exit(1);
+    }
+
+    if (!S_ISREG(sb.st_mode)) {
+        fprintf(stderr, "%s is not a file\n", argv[1]);
+        exit(1);
+    }
+
+    p = mmap(0, sb.st_size, PROT_READ, MAP_SHARED, fd, 0);
+    if (p == MAP_FAILED) {
+        perror("mmap");
+        exit(1);
+    }
+
+    if (close(fd) == -1) {
+        perror("close");
+        exit(1);
+    }
+
+    for (len = 0; len < sb.st_size; len++) putchar(p[len]);
+
+    if (munmap(p, sb.st_size) == -1) {
+        perror("munmap");
+        exit(1);
+    }
+
+    return 0;
+}
+
+------------------------------------------------------------------------
+COMPILAÇÃO E EXECUÇÃO
+
+$ gcc -Wall -o q2 q2.c && ./q2 example
+------------------------------------------------------------------------
+RESULTADO
+
+#include <stdio.h>
+
+
+int
+main(void)
+{
+    puts("Hello World");
+
+    return 0;
+}
+------------------------------------------------------------------------
+CONCLUSÃO
+
+Em vez de usar funções tradicionais de leitura de arquivos como read() ou fread() com buffers, o programa mapeia o arquivo do disco diretamente no espaço de memória virtual do processo com o mmap().
+Isso permite que o conteúdo do arquivo seja acessado e impresso como se fosse um simples array (p[len]), delegando o carregamento dos dados do disco para a RAM ao gerenciador de memória do SO (através de paginação por demanda e page faults).
+------------------------------------------------------------------------
+
+
+3) Modifique map-exemplo.c para:
+a. Verificar quantas páginas de memória o seu arquivo precisou.
+b. Medir o quão mais rápido foi a escrita do arquivo mapeado quando comparado com a E/S em disco. Dica: use gettimeofday().
+------------------------------------------------------------------------
+ARQUIVO q3.c
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/mman.h>
+#include <assert.h>
+#include <sys/time.h>
+
+
+#define SHOW_ARCH 0
+
+
+typedef enum
+{
+    ENV_SET = 7,
+    PRINT_OK,
+    MAP_OK,
+    TIME_OK,
+    WRITE_OK,
+    DISK_OK
+} ret_t;
+
+
+struct timeval start, end;
+struct stat sb;
+off_t len;
+char *p, *file_name;
+int fd;
+
+
+ret_t
+init_environment(int argc, char *argv[])
+{
+    if (argc < 2) {
+        fprintf(stderr, "usage: %s <file>\n", argv[0]);
+        exit(EXIT_FAILURE);
+    }
+
+    fd = open(argv[1], O_RDONLY);
+    if (fd == -1) {
+        perror("open");
+        exit(EXIT_FAILURE);
+    }
+
+    if (fstat(fd, &sb) == -1) {
+        perror("fstat");
+        exit(EXIT_FAILURE);
+    }
+
+    if (!S_ISREG(sb.st_mode)) {
+        fprintf(stderr, "%s is not a file\n", argv[1]);
+        exit(EXIT_FAILURE);
+    }
+
+    file_name = argv[1];
+
+    return ENV_SET;
+}
+
+
+ret_t
+print_mapping_stats(void)
+{
+    long arch_size = sb.st_size;
+    long page_size = (long)getpagesize();
+
+    /**
+     * The number of pages used is the lowest multiple of the page size
+     * greater or equal to the archive size.
+     * That's why we added 1 when the archive size is not a multiple of
+     * the page size.
+     */
+    long n_pages = (arch_size / page_size) +
+                   ((arch_size % page_size == 0) ? 0 : 1);
+
+    printf("Archive Size: %ld\n", arch_size);
+    printf("Page Size: %ld\n", page_size);
+    printf("Number of Pages Used: %ld\n\n", n_pages);
+
+    return PRINT_OK;
+}
+
+
+ret_t
+calculate_elapsed_seconds(double *out_time)
+{
+    long seconds = end.tv_sec - start.tv_sec;
+    long microseconds = end.tv_usec - start.tv_usec;
+
+    if (microseconds < 0) {
+        seconds -= 1;
+        microseconds += 1000000;
+    }
+
+    double elapsed_time = seconds + (microseconds / 1000000.0);
+    printf("Elapsed time: %.6f seconds\n", elapsed_time);
+    *out_time = elapsed_time;
+
+    return TIME_OK;
+}
+
+
+ret_t
+map_archive(void)
+{
+    /**
+     * MAP_POPULATE prefaults the page tables so that the benchmark loop
+     * measures actual memory access rather than cold disk spin-up.
+     */
+    p = mmap(0, sb.st_size, PROT_READ, MAP_SHARED | MAP_POPULATE, fd, 0);
+
+    if (p == MAP_FAILED) {
+        perror("mmap");
+        exit(EXIT_FAILURE);
+    }
+
+    if (close(fd) == -1) {
+        perror("close");
+        exit(EXIT_FAILURE);
+    }
+
+    gettimeofday(&start, NULL);
+    for (len = 0; len < sb.st_size; len++) {
+#if SHOW_ARCH
+        putchar(p[len]);
+#else
+        volatile char dummy = p[len];
+        (void)dummy;
+#endif
+    }
+    gettimeofday(&end, NULL);
+
+    if (munmap(p, sb.st_size) == -1) {
+        perror("munmap");
+        exit(EXIT_FAILURE);
+    }
+
+    return MAP_OK;
+}
+
+
+ret_t
+write_using_disk(void)
+{
+    fd = open(file_name, O_RDONLY);
+    if (fd == -1) {
+        perror("open disk");
+        exit(EXIT_FAILURE);
+    }
+
+    char ch;
+    ssize_t bytes_read;
+
+    gettimeofday(&start, NULL);
+    while ((bytes_read = read(fd, &ch, 1)) > 0) {
+#if SHOW_ARCH
+        putchar(ch);
+#else
+        volatile char dummy = ch;
+        (void)dummy;
+#endif
+    }
+    gettimeofday(&end, NULL);
+
+    if (bytes_read == -1) {
+        perror("read");
+        close(fd);
+        exit(EXIT_FAILURE);
+    }
+
+    if (close(fd) == -1) {
+        perror("close");
+        exit(EXIT_FAILURE);
+    }
+
+    return DISK_OK;
+}
+
+
+int
+main(int argc, char *argv[])
+{
+    double mmap_time = 0.0;
+    double disk_time = 0.0;
+
+    assert(init_environment(argc, argv) == ENV_SET);
+    printf("\n=============== FILE %s ===============\n", file_name);
+
+    assert(map_archive() == MAP_OK);
+    assert(print_mapping_stats() == PRINT_OK);
+
+    puts("Mapping Elapsed Time:");
+    assert(calculate_elapsed_seconds(&mmap_time) == TIME_OK);
+
+    puts("\nUsing I/O in Disk for the same file:");
+    assert(write_using_disk() == DISK_OK);
+    assert(calculate_elapsed_seconds(&disk_time) == TIME_OK);
+
+    printf("\nSpeedup: Mapped file was %.2fx faster than standard Disk I/O.\n",
+            disk_time / mmap_time);
+
+    return 0;
+}
+
+ARQUIVO one_page.c
+
+/**
+ * This archive has a size multiple of 4096, that is
+ * the common size of a page in a regular computer.
+ */
+
+#include <stdio.h>
+
+
+int
+main(void)
+{
+    puts("Hello World");
+
+    return 0;
+}
+
+
+/**
+ * Fill thr 4096 characters:
+ * --------------------------------------------------
+ * --------------------------------------------------
+ * --------------------------------------------------
+ * --------------------------------------------------
+ * --------------------------------------------------
+ * --------------------------------------------------
+ * --------------------------------------------------
+ * --------------------------------------------------
+ * --------------------------------------------------
+ * --------------------------------------------------
+ * --------------------------------------------------
+ * --------------------------------------------------
+ * --------------------------------------------------
+ * --------------------------------------------------
+ * --------------------------------------------------
+ * --------------------------------------------------
+ * --------------------------------------------------
+ * --------------------------------------------------
+ * --------------------------------------------------
+ * --------------------------------------------------
+ * --------------------------------------------------
+ * --------------------------------------------------
+ * --------------------------------------------------
+ * --------------------------------------------------
+ * --------------------------------------------------
+ * --------------------------------------------------
+ * --------------------------------------------------
+ * --------------------------------------------------
+ * --------------------------------------------------
+ * --------------------------------------------------
+ * --------------------------------------------------
+ * --------------------------------------------------
+ * --------------------------------------------------
+ * --------------------------------------------------
+ * --------------------------------------------------
+ * --------------------------------------------------
+ * --------------------------------------------------
+ * --------------------------------------------------
+ * --------------------------------------------------
+ * --------------------------------------------------
+ * --------------------------------------------------
+ * --------------------------------------------------
+ * --------------------------------------------------
+ * --------------------------------------------------
+ * --------------------------------------------------
+ * --------------------------------------------------
+ * --------------------------------------------------
+ * --------------------------------------------------
+ * --------------------------------------------------
+ * --------------------------------------------------
+ * --------------------------------------------------
+ * --------------------------------------------------
+ * --------------------------------------------------
+ * --------------------------------------------------
+ * --------------------------------------------------
+ * --------------------------------------------------
+ * --------------------------------------------------
+ * --------------------------------------------------
+ * --------------------------------------------------
+ * --------------------------------------------------
+ * --------------------------------------------------
+ * --------------------------------------------------
+ * --------------------------------------------------
+ * --------------------------------------------------
+ * --------------------------------------------------
+ * --------------------------------------------------
+ * --------------------------------------------------
+ * --------------------------------------------------
+ * --------------------------------------------------
+ * --------------------------------------------------
+ * --------------------------------------------------
+ * File with 4096 characters
+ */
+
+ARQUIVO huge_file.txt
+
+Adicionando Gerenciamento de Memória Virtual ao seu
+Simulador de Processos do T1
+Segundo Trabalho de Sistemas de Computação – INF 1316
+Prazo de entrega (envio por E-mail): 1 de dezembro, 23:59
+Data de apresentação (na bancada): 3 de dezembro, 11-13 hs
+Introdução
+No segundo trabalho você irá estender o seu Trabalho-1 adicionando o gerenciamento de
+memória virtual, sendo que as maiores modificações deverão ocorrer também no KernelSim,
+processo simulador do kernel/núcleo. Essas serão a implementação das tabelas de página TP,
+de cada um dos cinco processos de aplicação (A1, A2, A3, A4, A5), e o mapeamento de cada
+página lógica (valor da variável mem de Ax) para um dos 32 quadros de página de uma
+hipotética memória principal, chamada de RAM.
+Você continuará usando também o controlador de interrupções (InterContolerSim), só que ele
+irá gerar, além dos IRQ0, IRQ1 e IRQ2 (como no Trabalho-1) também uma interrupção vinda
+supostamente de partição de swap hipotética, digamos, a interrupção IRQ3. Esta nova
+interrupção deverá sinalizar ao KernelSim quando uma operação de read/write do swap para a
+memória RAM, ou vice-versa, tiver terminado. Por exemplo, para buscar uma nova página
+lógica de um Ax e inseri-la em um quadro de páginas da RAM determinado pela política de
+substituição de páginas a ser implementada. Ou seja, a interrupção IRQ0 continua sinalizando o
+final de um TimeSlice, e as interrupções IRQ1 e IRQ2 indicam, respectivamente, o término da
+operação no dispositivos D1 e D2. A interrupção IRQ3, por sua vez, indica “término de uma
+operação da partição do disco de swapping”, e irá desbloquear o primeiro processo Ax na fila
+de espera (pelo espaço em memória).
+Simulando os acessos à memória como system calls
+Como você viu nas aulas teóricas, a tradução do endereço lógico para o endereço físico de
+memória acontece a cada instrução de máquina gerada pela CPU, ou seja, é uma tradução
+automática realizada pela Memory Management Unit (MMU)
+1
+, e não tem nada a ver com
+system calls realizadas pelos processos. No entanto, para facilitar esse trabalho T2, “vamos
+fazer de conta” que cada vez que um processo Ax acessa uma página virtual nova, diferente da
+sua página virtual atual, ou seja, quando a variável mem muda de valor, é como se fosse uma
+chamada de sistema parecida com a syscall de E/S para um dispositivo, D1 ou D2.
+Assim como no Trabalho-1, cada processo de aplicação Ax executa um loop (de até MAX
+iterações) e agora, além de decidir aleatoriamente (com certa probabilidade) , se requisita um
+syscall para leitura ou escrita no dispositivo Dx, usando syscall(Dx,R/W/X), dessa vez
+cada Ax cada iteração deverá decidir, com uma probabilidade maior, se a variável mem trocará
+de valor, escolher aleatoriaente o novo índice de página virtual (troca do valor da variável mem
+1 uma componente eletrônica no no chip da CPU
+1
+para outro valor no intervalo [0, 15] ), e determinar se o acesso nessa nova mem será de
+escrira ou leitura.
+Exemplo do código do Ax:
+PC++;
+mem = rand()%15; //initial logical page index in 0..15 (Mem[16])
+repeat {
+sleep(0.5)
+if (m =rand()%100 < 30) { // 30% chance to access new logical page
+mem = m %16; //the new logical page index among 0..15 (Mem[16])
+if (mem % 2) Op = R else Op = W;
+// inform KernelSim of access(mem, Op) as syscall (M, mem, Op)
+if (d = rand()%100 +1 < 15) { // generate a random syscall to D1 or D2
+if (d % 2) Dx = D1 else Dx= D2;
+if (d % 3 == 1) Op = R
+else if (d % 3 = 1) Op = W
+else Op = X;
+// inform KernelSim of syscall(Dx, Op) to device D1 or D2
+}
+sleep(0.5);
+} until (PC > MAX);
+Novo KernelSim
+O KernelSim, então, terá que ser estendido para incluir o gerenciamento de memória virtual
+para cada um dos cinco processos Ax. Como a memória física RAM só tem 32 quadros de
+página e são cinco A1,..A5 disputando a memória RAM, cada um com 16 páginas virtuais (16
+possíveis valores da variável mem) é claro que cada Ax só terá algumas de suas páginas virtuais
+posicionadas em alguns dos 32 quadros de página de RAM. Por isso o novo Kernel-Sim deverá
+implementar e atualizar, constantemente as seguintes estruturas de dados:
+● globalmente, um único array, RAM [32], representando a memória física RAM com 32
+page frames e
+● um array RAM-free[32] de booleanos para designar os frames livres em RAM[32]
+● uma tabela de página, TPx[16], uma para cada processo Ax, indicando quais de suas
+páginas virtuais estão em qual índice de pageframe no array de RAM.
+● Cada entrada de uma tabela de página TP[i] deverá ter vários campos, mas pelo menos
+os seguintes:
+○ valid/invalid bit: se essa página está na memória RAM ou não (valid =0)
+○ frame: índice (ou ponteiro) para o page frame onde está localizado na RAM
+○ modifyBit: se a última operação que ocasionou a obtenção de um page frame
+da RAM foi uma escrita, então modifyBit=1, senão modifyBit=0
+○ when: o valor do PC de Ax na ocasião do mais recente access(mem,op)
+quando mem conseguiu de um page frame da RAM
+Passo a passo da tradução de memória lógica para física
+2
+Então, ao receber um access(mem,op)
+2 de um processo Ax, o KernelSim:
+1. Bloqueia o processo Ax (SIGSTOP)
+2. Verifica na tabela de páginas TPx[mem] se a entrada mem está válida, isto é, contém
+um índice/endereço de quadro de página na memória física RAM, ou não.
+3. Se a página mem estiver na RAM (bit válido), imediatamente desbloqueia Ax
+(SIGCONT) e coloca na fila de processos prontos;
+4. Se mem não estiver na RAM, temos um Page-faul e faça:
+a. Procure, em RAM-free, se existe um quadro de página dando sopa (= vazio). E
+se sim, atribui a TPx[mem].frame o endereço do quadro de páginas escolhido,
+desbloqueia Ax (SIGCONT);
+b. Se todos os quadros da RAM estiverem ocupados por páginas de processos,
+chame o seu algoritmo de substituição de página substitute(). Este retornará
+um quadro da RAM a ser alocado para Ax.mem e a ser sobrescrito, digamos,
+RAM[zz].
+c. Atualize então a tabela TPx[mem].frame com zz, o endereço do quadro de
+página retornado por subs() e insira a requisição (Ax,mem) no final da fila de
+espera (Sw_Queue), aguardando por uma interrupção IRQ3 do disco de swap;
+d. Então, quando essa requisição chegar ao início da Sw_Queue, é como se o
+conteúdo da página mem tivesse sido lido da partição de swap e possa ser
+escrito na RAM[zz];
+e. Mas existem dois casos:
+i. se o conteúdo prévio de RAM[zz] tiver sido uma página apenas lida,
+devido à operação prévia de access(..,R), o recebimento de uma única
+IRQ3 basta para sobrescrever o quadro RAM[zz] com a página Ax.mem.
+ii. Porém, se conteúdo prévio de RAM[zz] tiver sido uma página escrita,
+este conteúdo prévio teria que ser previamente atualizado no disco de
+swapping. Ou seja, demandaria, primeiro, a escrita do conteúdo
+anterior no swap e, só depois, a leitura da página Ax.mem do swap, ou
+seja, duas interrupções IRQ3.
+iii. Não, nós não vamos de fato salvar o conteúdo anterior de RAM[zz] no
+swap (até porque não implementamos uma partição de swap de fato),
+mas iremos alongar a espera total da requisição Ax.mem. Como?
+Fazendo com que, nesse caso, a entrada Ax.mem na Sw_Queue tenha
+um contador de espera e, caso a requisição receba o primeiro IRQ3,
+decrementará esse contador e voltará ao final da mesma fila
+Sw_Queue. Só quando chegar ao início da fila Sw_Queue com
+contador=0 e IRQ3 chegar no KernelSim, a paginação terá sido
+concluída.
+Obs: Isso é ilustrado na Figura 1. Se a requisição do processo A1.m3 for colocada no quadro
+RAM[4] então será resolvida assim que essa requisição chegar ao início da fila Sw_Queue. Mas
+2 Note que a chamada access() não tem como parâmetro qual foi o processo (Ax), mas o KernelSim terá
+como identificar isso.
+3
+se a requisição de processo A1.m3 for colocada no quadro RAM[1], o conteúdo prévio (A4,m0)
+teria que ser salvo primeiro no swap. Nesse caso, na fila Sw_Queue a requisição (A1.m3) volta
+para o final da fila e tem que esperar mais até sua vez.
+Figura ilustrativa:
+Figura 1: o KernelSim com estruturas necessárias para o gerenciamento da memória virtual.
+Escolha do quadro de página a ser sobreescrito: algoritmo substitute()
+Como algoritmo de substituição de páginas (i.e., escolha do quadro de página a ser
+sobreescrito), você deve implementar duas rotinas e testá-las separadamente. Uma deve ser
+int local_substitute (RAM) e a outra, int global_susbtitute(RAM), sendo que a versão “local”
+sempre irá selecionar um quadro de RAM ocupado com outra página do próprio processo Ax
+com acesso (Ax.nova_mem), enquanto que a “global” permite que um processo “roube” um
+quadro de página de qualquer outro processo Ay.
+Além disso, você deve necessariamente usar a informação sobre conteúdos modificados (o bit
+M) de um quadro em RAM. De resto, baseie-se na aula sobre Substituição de páginas e escolha
+o algoritmo que você achar mais pertinente.
+O que não mudou do T1 para o T2
+Sete Processos: No seu trabalho, cada um dos elementos em azul-cinza da Fig. 1 deve ser um
+processo Unix. Tanto InterController Sim como KernelSim devem ser processos infinitos que
+executam em paralelo.
+Sinais: Para emular as interrupções (geradas por InterControllerSim) e tratadas por KernelSim,
+você pode usar qualquer mecanismo de comunicação IPC, como pipes, shmem ou FIFO, e deve
+usar os sinais SIGSTOP e SIGCONT para permitir que o KernelSim pause e retome,
+respectivamente, a execução dos processos de aplicação A1,..,A5. Note que access(mem,op)
+também será considerada uma syscall (apenas para efeitos de simulação).
+4
+Timesharing: Qualquer processo Ax pode ser executado ininterruptamente por, no máximo,
+TimeSlice segundos. Portanto, quando chega um IRQ0 (Time Slice), KernelSim, deve enviar um
+SIGSTOP para o processo que estava executando, e escolher outro processo de aplicação Ay e
+novamente ativar o mesmo usando o sinal SIGCONT, a menos que este processo esteja
+esperando pelo retorno de uma syscall (de E/S para D1, D2 ou Swap). Mais ainda, se dois
+processos, digamos Ay e Az, tiverem executado uma syscall para o mesmo dispositivo, deverão
+ser enfileirados na fila correspondente (D1/D2/Sw_Queue) e liberados na ordem FCFS à
+medida que os IRQs correspondentes chegam ao KernelSim.
+InterContollerSim: Geração de Interrupções: Em vez de simularmos um tempo específico que
+cada um dos dispositivos D1, D2 e Swap precisa para realizar os seus acessos de leitura ou
+escrita, faremos com que o InterControllerSim gere aleatoriamente interrupções para cada
+dispositivo (D1/D2, Sw) que indicam o término de qualquer pedido de E/S no dispositivo
+correspondente. A novidade é que você irá adicionar uma nova interrupção, a IRQ3,
+proveniente do disco/partição de swap.
+Para isso, faça o InterContollerSim gerar, a cada 500 ms (usando sleep() dentro do loop):
+● Um IRQ0 com probabilidade 1 (frequência do TimeSlice)
+● Um IRQ1 com probabilidade P_1 = 0.1
+● Um IRQ2 com probabilidade P_2 = 0.05
+● Um IRQ3 com probabilidade P_3 = 0.5 (frequência de resposta da partição de swap)
+Obs: Como no Trabalho-1, se você achar que essas frequências estão dificultando visualizar a
+execução, você pode ajustar a periodicidade do TimeSlice e as probabilidades de P_1, P_2 e
+P_3.
+Troca de Contexto: No seu sistema, a troca de contexto acontecerá a cada vez que houver o
+chaveamento de um processo de aplicação para um outro. E, no caso específico do seu
+programa, esse contexto deve ser o contador PC do processo e a memória mem sendo
+acessada. Então, ao reativar um processo anteriormente interrompido, o seu contexto
+completo anteriormente salvo deve ser restaurado, em parte para garantir que todos os
+processos de aplicação Ax executem exatamente MAX interações. Além disso, se a interrupção
+de um processo se deveu a um syscall, então os parâmetros do syscall (D1 ou D2, R/W ou X)
+também devem fazer parte do contexto salvo e restaurado do processo.
+Visualizando os estados dos processos: Além disso, seu simulador (envolvendo todos os
+processos incluindo InterController Sim), deve poder ser interrompido e reiniciado do ponto
+em que parou através Ctrl+Z PID_simulador) e, quando estiver parado, deve mostrar as
+seguintes informações sobre todos os processos A1-A5:
+● valor do PC e valor da última memória acessada (mem)
+● em que estado está (estado pronto, ou bloqueado)
+● se estiver bloqueado, em qual dispositivo e com qual operação
+● se está executando (porque o KernelSim enviou um SIGCONT e ainda não um SIGSTOP
+para ele)
+5
+● Desde o início da execução e até esse valor de PC, quantas vezes o processo AP acessou
+cada um dos dispositivos.
+● e se estiver terminado
+● Além disso, o Kernel deve contabilizar o número total de page-faults causados por cada
+um dos processos A1..A5, e quantos dos tratamentos de page-faults tiveram que
+primeiro salvar o conteúdo de RAM[zz[, e portanto, precisaram esperar dois IRQ3.
+Observações Finais
+Como acontece a avaliação?
+O trabalho pode ser feito individualmente ou em dupla. Deverá ser enviado na Data de Entrega
+(vide acima) para os e-mails do professor e do monitor, e deverá ser apresentado e explicado
+na Data de Apresentação na aula de laboratório (necessariamente com a presença da dupla).
+Cada dois dias de atraso acarreta um desconto de 1 ponto na nota máxima.
+O que deve ser enviado/entregue?
+Devem ser entregues o código-fonte e um relatório indicando que programas fazem parte do
+seu trabalho, incluindo eventuais programas de teste. Essa explicação também será objeto de
+avaliação.
+Susetão importante:
+Comece imediatamente. O trabalho é complexo e trabalhoso!!! Dá pra ver pelo
+tamanho do enunciado, certo?
+6
+Possíveis perguntas sobre o T2 de INF1316 -2026.1
+(tente alternar os dois alunos)
+1) o que conseguiu implementar do enunciado? O que faltou?
+2) Como você processa a lista de espera da interrupção IRQ3? Você trata da diferença
+entre a substituição de uma página suja (escrita através de um write) e uma página
+limpa (sem ter nenhum write)?
+3) Quais algoritmos de substituição de página voce implementou ? Como voce fez o
+chaveamento entre uma substiutute_1() e uma substitute_2()
+4) Explique o fluxo de ações quando um A_i acessa uma página lógica que não estão na
+memória RAM.
+5) Para cada quadro de página, quais informações sobre sua ocupação você guarda, e
+como?
+6) Explique o estado do kernelSim exibido quando voce interrompe a execução.
+7) Quais são os atributos que você guarda em cada entrada TP[] e por que?
+8) Como você continua a execução de A_i quando esse é desbloqueado depois o
+page-fault ter sido tratado.
+Peso dos critérios de avaliação do trabalho:
+A. Grau de completude (ou o que não foi nem implementado, ou não está
+funcionando) incluindo os dois algoritmos. = 70%
+B. Se só implementou um algoritmo de substituição, perde 2 pontos; se não
+implementou nenhum, já perde 4 pontos de cara.
+C. Fizeram uma comparação da quantidade de page faults entre os 2 algoritmos? =
+10%
+D. Qualidade e completude output do estado do gerente de Kernel = 15%
+E. encapsulamento/modularização do gerente de memória dentro deu kernelsim
+= 5%
+F. Obs: a qualidade do relatório e documentação entra na nota T2-Rel
+
+------------------------------------------------------------------------
+COMPILAÇÃO E EXECUÇÃO
+
+$ gcc -Wall -o q3 q3.c && ./q3 q3.c && ./q3 one_page.c && ./q3 huge_file.txt
+------------------------------------------------------------------------
+RESULTADO
+
+=============== FILE q3.c ===============
+Archive Size: 4069
+Page Size: 4096
+Number of Pages Used: 1
+
+Mapping Elapsed Time:
+Elapsed time: 0.000013 seconds
+
+Using I/O in Disk for the same file:
+Elapsed time: 0.004396 seconds
+
+Speedup: Mapped file was 338.15x faster than standard Disk I/O.
+
+=============== FILE one_page.c ===============
+Archive Size: 4096
+Page Size: 4096
+Number of Pages Used: 1
+
+Mapping Elapsed Time:
+Elapsed time: 0.000017 seconds
+
+Using I/O in Disk for the same file:
+Elapsed time: 0.005602 seconds
+
+Speedup: Mapped file was 329.53x faster than standard Disk I/O.
+
+=============== FILE huge_file.txt ===============
+Archive Size: 15451
+Page Size: 4096
+Number of Pages Used: 4
+
+Mapping Elapsed Time:
+Elapsed time: 0.000061 seconds
+
+Using I/O in Disk for the same file:
+Elapsed time: 0.021082 seconds
+
+Speedup: Mapped file was 345.61x faster than standard Disk I/O
+------------------------------------------------------------------------
+CONCLUSÃO
+
+Quando começamos a medir o tempo do mmap(), percebemos logo de cara que cronometrar apenas a chamada da função era um erro, porque o SO usa carregamento sob demanda (lazy loading): a função só registra o ponteiro na memória virtual, mas o arquivo só sai do disco para a RAM quando o nosso laço for tenta ler os endereços e força os Page Faults na MMU.
+Ao colocar o cronômetro no laço de leitura, notamos que o putchar() deixava tudo lento por culpa do tempo de resposta visual do terminal.
+Para isolar a velocidade do hardware, desativamos a impressão e usamos uma variável volatile para forçar a CPU a ler byte por byte na memória.
+Já na comparação com a E/S tradicional usando read(), descartamos a ideia de criar um buffer de 4096 bytes (1 página), pois o read() estava dando tempos menores que o mmap().
+Analisando os logs, descobrimos que como o mmap() rodava primeiro, ele fazia todo o trabalho pesado de buscar o arquivo "frio" no SSD e sofrer as interrupções da MMU, deixando o arquivo salvo no cache da RAM (Page Cache do Kernel) para o read() ler quase instantaneamente logo depois.
+Por isso nivelamos o teste usando a flag MAP_POPULATE no mmap (para pré-carregar as páginas) e comparamos a leitura direta byte a byte.
+Dessa forma a vantagem real apareceu: enquanto o read() perde muito tempo fazendo chamadas de sistema (syscalls), trocando contexto entre Usuário e Kernel e copiando dados para um buffer intermediário, o mmap() delega todo o controle de blocos de 4 KB diretamente para o hardware (MMU e TLB), permitindo varrer o arquivo como um simples vetor na velocidade da própria RAM.
+------------------------------------------------------------------------
+
+
+4)Escreva dois programas prog1.c e prog2.c que trocam dados através de um mesmo arquivo mapeado para memória (de cada um).
+------------------------------------------------------------------------
+ARQUIVO q4.c
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <pthread.h>
+#include <unistd.h>
+#include <time.h>
+
+#define MAXFILA 8
+#define TOTAL_ELEMENTOS 64
+#define NUM_PRODUTORES 2
+#define NUM_CONSUMIDORES 2
+
+
+int fila[MAXFILA];
+int in = 0, out = 0, count = 0;
+
+pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t cond_produtor = PTHREAD_COND_INITIALIZER;
+pthread_cond_t cond_consumidor = PTHREAD_COND_INITIALIZER;
+
+void* produtor(void* arg) {
+    long id = (long)arg;
+    int qtd_por_produtor = TOTAL_ELEMENTOS / NUM_PRODUTORES;
+
+    for (int i = 0; i < qtd_por_produtor; i++) {
+        int item = rand() % 100; 
+
+        pthread_mutex_lock(&mutex);
+
+        while (count == MAXFILA) {
+            pthread_cond_wait(&cond_produtor, &mutex);
+        }
+
+        fila[in] = item;
+        printf("[PRODUTOR %ld] Inseriu: %d \t(Pos: %d | Total: %d)\n", id, item, in, count + 1);
+        in = (in + 1) % MAXFILA;
+        count++;
+
+        pthread_cond_broadcast(&cond_consumidor);
+        pthread_mutex_unlock(&mutex);
+
+        sleep(1);
+    }
+    return NULL;
+}
+
+void* consumidor(void* arg) {
+    long id = (long)arg;
+    int qtd_por_consumidor = TOTAL_ELEMENTOS / NUM_CONSUMIDORES;
+
+    for (int i = 0; i < qtd_por_consumidor; i++) {
+        pthread_mutex_lock(&mutex);
+
+        while (count == 0) {
+            pthread_cond_wait(&cond_consumidor, &mutex);
+        }
+
+        int item = fila[out];
+        printf("\t[CONSUMIDOR %ld] Retirou: %d \t(Pos: %d | Total: %d)\n", id, item, out, count - 1);
+        out = (out + 1) % MAXFILA;
+        count--;
+
+        pthread_cond_broadcast(&cond_produtor);
+        pthread_mutex_unlock(&mutex);
+
+        sleep(2);
+    }
+    return NULL;
+}
+
+int main() {
+    pthread_t produtores[NUM_PRODUTORES];
+    pthread_t consumidores[NUM_CONSUMIDORES];
+    srand(time(NULL));
+
+    for (long i = 0; i < NUM_PRODUTORES; i++) {
+        pthread_create(&produtores[i], NULL, produtor, (void*)(i + 1));
+    }
+    for (long i = 0; i < NUM_CONSUMIDORES; i++) {
+        pthread_create(&consumidores[i], NULL, consumidor, (void*)(i + 1));
+    }
+
+    for (int i = 0; i < NUM_PRODUTORES; i++) {
+        pthread_join(produtores[i], NULL);
+    }
+    for (int i = 0; i < NUM_CONSUMIDORES; i++) {
+        pthread_join(consumidores[i], NULL);
+    }
+
+    return 0;
+}
+------------------------------------------------------------------------
+COMPILAÇÃO E EXECUÇÃO
+
+$ gcc -Wall -o newProdutorConsumidor newProdutorConsumidor.c && ./newProdutorConsumidor
+------------------------------------------------------------------------
+RESULTADO
+
+[PRODUTOR 1] Inseriu: 88        (Pos: 0 | Total: 1)
+[PRODUTOR 2] Inseriu: 79        (Pos: 1 | Total: 2)
+        [CONSUMIDOR 1] Retirou: 88      (Pos: 0 | Total: 1)
+        [CONSUMIDOR 2] Retirou: 79      (Pos: 1 | Total: 0)
+[PRODUTOR 1] Inseriu: 9         (Pos: 2 | Total: 1)
+[PRODUTOR 2] Inseriu: 88        (Pos: 3 | Total: 2)
+        [CONSUMIDOR 1] Retirou: 9       (Pos: 2 | Total: 1)
+        [CONSUMIDOR 2] Retirou: 88      (Pos: 3 | Total: 0)
+[PRODUTOR 1] Inseriu: 70        (Pos: 4 | Total: 1)
+[PRODUTOR 2] Inseriu: 88        (Pos: 5 | Total: 2)
+[PRODUTOR 1] Inseriu: 32        (Pos: 6 | Total: 3)
+[PRODUTOR 2] Inseriu: 27        (Pos: 7 | Total: 4)
+        [CONSUMIDOR 1] Retirou: 70      (Pos: 4 | Total: 3)
+        [CONSUMIDOR 2] Retirou: 88      (Pos: 5 | Total: 2)
+[PRODUTOR 1] Inseriu: 97        (Pos: 0 | Total: 3)
+[PRODUTOR 2] Inseriu: 58        (Pos: 1 | Total: 4)
+[PRODUTOR 2] Inseriu: 26        (Pos: 2 | Total: 5)
+[PRODUTOR 1] Inseriu: 62        (Pos: 3 | Total: 6)
+        [CONSUMIDOR 2] Retirou: 32      (Pos: 6 | Total: 5)
+        [CONSUMIDOR 1] Retirou: 27      (Pos: 7 | Total: 4)
+[PRODUTOR 2] Inseriu: 58        (Pos: 4 | Total: 5)
+[PRODUTOR 1] Inseriu: 70        (Pos: 5 | Total: 6)
+[PRODUTOR 2] Inseriu: 7         (Pos: 6 | Total: 7)
+[PRODUTOR 1] Inseriu: 0         (Pos: 7 | Total: 8)
+        [CONSUMIDOR 2] Retirou: 97      (Pos: 0 | Total: 7)
+        [CONSUMIDOR 1] Retirou: 58      (Pos: 1 | Total: 6)
+[PRODUTOR 2] Inseriu: 27        (Pos: 0 | Total: 7)
+[PRODUTOR 1] Inseriu: 31        (Pos: 1 | Total: 8)
+        [CONSUMIDOR 2] Retirou: 26      (Pos: 2 | Total: 7)
+[PRODUTOR 1] Inseriu: 15        (Pos: 2 | Total: 8)
+        [CONSUMIDOR 1] Retirou: 62      (Pos: 3 | Total: 7)
+[PRODUTOR 2] Inseriu: 9         (Pos: 3 | Total: 8)
+        [CONSUMIDOR 2] Retirou: 58      (Pos: 4 | Total: 7)
+[PRODUTOR 1] Inseriu: 93        (Pos: 4 | Total: 8)
+        [CONSUMIDOR 1] Retirou: 70      (Pos: 5 | Total: 7)
+[PRODUTOR 2] Inseriu: 94        (Pos: 5 | Total: 8)
+        [CONSUMIDOR 2] Retirou: 7       (Pos: 6 | Total: 7)
+[PRODUTOR 2] Inseriu: 54        (Pos: 6 | Total: 8)
+        [CONSUMIDOR 1] Retirou: 0       (Pos: 7 | Total: 7)
+[PRODUTOR 1] Inseriu: 92        (Pos: 7 | Total: 8)
+        [CONSUMIDOR 2] Retirou: 27      (Pos: 0 | Total: 7)
+[PRODUTOR 1] Inseriu: 75        (Pos: 0 | Total: 8)
+        [CONSUMIDOR 1] Retirou: 31      (Pos: 1 | Total: 7)
+[PRODUTOR 2] Inseriu: 28        (Pos: 1 | Total: 8)
+        [CONSUMIDOR 2] Retirou: 15      (Pos: 2 | Total: 7)
+[PRODUTOR 1] Inseriu: 66        (Pos: 2 | Total: 8)
+        [CONSUMIDOR 1] Retirou: 9       (Pos: 3 | Total: 7)
+[PRODUTOR 2] Inseriu: 10        (Pos: 3 | Total: 8)
+        [CONSUMIDOR 2] Retirou: 93      (Pos: 4 | Total: 7)
+[PRODUTOR 1] Inseriu: 85        (Pos: 4 | Total: 8)
+        [CONSUMIDOR 1] Retirou: 94      (Pos: 5 | Total: 7)
+[PRODUTOR 2] Inseriu: 75        (Pos: 5 | Total: 8)
+        [CONSUMIDOR 2] Retirou: 54      (Pos: 6 | Total: 7)
+        [CONSUMIDOR 1] Retirou: 92      (Pos: 7 | Total: 6)
+[PRODUTOR 2] Inseriu: 26        (Pos: 6 | Total: 7)
+[PRODUTOR 1] Inseriu: 76        (Pos: 7 | Total: 8)
+        [CONSUMIDOR 2] Retirou: 75      (Pos: 0 | Total: 7)
+[PRODUTOR 1] Inseriu: 86        (Pos: 0 | Total: 8)
+        [CONSUMIDOR 1] Retirou: 28      (Pos: 1 | Total: 7)
+[PRODUTOR 2] Inseriu: 6         (Pos: 1 | Total: 8)
+        [CONSUMIDOR 2] Retirou: 66      (Pos: 2 | Total: 7)
+[PRODUTOR 1] Inseriu: 66        (Pos: 2 | Total: 8)
+        [CONSUMIDOR 1] Retirou: 10      (Pos: 3 | Total: 7)
+[PRODUTOR 2] Inseriu: 76        (Pos: 3 | Total: 8)
+        [CONSUMIDOR 1] Retirou: 85      (Pos: 4 | Total: 7)
+[PRODUTOR 1] Inseriu: 74        (Pos: 4 | Total: 8)
+        [CONSUMIDOR 2] Retirou: 75      (Pos: 5 | Total: 7)
+[PRODUTOR 2] Inseriu: 99        (Pos: 5 | Total: 8)
+        [CONSUMIDOR 1] Retirou: 26      (Pos: 6 | Total: 7)
+[PRODUTOR 1] Inseriu: 55        (Pos: 6 | Total: 8)
+        [CONSUMIDOR 2] Retirou: 76      (Pos: 7 | Total: 7)
+[PRODUTOR 2] Inseriu: 23        (Pos: 7 | Total: 8)
+        [CONSUMIDOR 1] Retirou: 86      (Pos: 0 | Total: 7)
+[PRODUTOR 2] Inseriu: 33        (Pos: 0 | Total: 8)
+        [CONSUMIDOR 2] Retirou: 6       (Pos: 1 | Total: 7)
+[PRODUTOR 1] Inseriu: 57        (Pos: 1 | Total: 8)
+        [CONSUMIDOR 2] Retirou: 66      (Pos: 2 | Total: 7)
+[PRODUTOR 2] Inseriu: 85        (Pos: 2 | Total: 8)
+        [CONSUMIDOR 1] Retirou: 76      (Pos: 3 | Total: 7)
+[PRODUTOR 1] Inseriu: 67        (Pos: 3 | Total: 8)
+        [CONSUMIDOR 2] Retirou: 74      (Pos: 4 | Total: 7)
+[PRODUTOR 2] Inseriu: 3         (Pos: 4 | Total: 8)
+        [CONSUMIDOR 1] Retirou: 99      (Pos: 5 | Total: 7)
+[PRODUTOR 1] Inseriu: 44        (Pos: 5 | Total: 8)
+        [CONSUMIDOR 2] Retirou: 55      (Pos: 6 | Total: 7)
+        [CONSUMIDOR 1] Retirou: 23      (Pos: 7 | Total: 6)
+[PRODUTOR 2] Inseriu: 82        (Pos: 6 | Total: 7)
+[PRODUTOR 1] Inseriu: 67        (Pos: 7 | Total: 8)
+        [CONSUMIDOR 2] Retirou: 33      (Pos: 0 | Total: 7)
+[PRODUTOR 1] Inseriu: 27        (Pos: 0 | Total: 8)
+        [CONSUMIDOR 1] Retirou: 57      (Pos: 1 | Total: 7)
+[PRODUTOR 2] Inseriu: 34        (Pos: 1 | Total: 8)
+        [CONSUMIDOR 1] Retirou: 85      (Pos: 2 | Total: 7)
+[PRODUTOR 1] Inseriu: 91        (Pos: 2 | Total: 8)
+        [CONSUMIDOR 2] Retirou: 67      (Pos: 3 | Total: 7)
+[PRODUTOR 2] Inseriu: 73        (Pos: 3 | Total: 8)
+        [CONSUMIDOR 1] Retirou: 3       (Pos: 4 | Total: 7)
+[PRODUTOR 1] Inseriu: 35        (Pos: 4 | Total: 8)
+        [CONSUMIDOR 2] Retirou: 44      (Pos: 5 | Total: 7)
+[PRODUTOR 2] Inseriu: 81        (Pos: 5 | Total: 8)
+        [CONSUMIDOR 1] Retirou: 82      (Pos: 6 | Total: 7)
+[PRODUTOR 2] Inseriu: 61        (Pos: 6 | Total: 8)
+        [CONSUMIDOR 2] Retirou: 67      (Pos: 7 | Total: 7)
+[PRODUTOR 1] Inseriu: 27        (Pos: 7 | Total: 8)
+        [CONSUMIDOR 1] Retirou: 27      (Pos: 0 | Total: 7)
+[PRODUTOR 2] Inseriu: 10        (Pos: 0 | Total: 8)
+        [CONSUMIDOR 2] Retirou: 34      (Pos: 1 | Total: 7)
+[PRODUTOR 1] Inseriu: 45        (Pos: 1 | Total: 8)
+        [CONSUMIDOR 1] Retirou: 91      (Pos: 2 | Total: 7)
+[PRODUTOR 2] Inseriu: 71        (Pos: 2 | Total: 8)
+        [CONSUMIDOR 2] Retirou: 73      (Pos: 3 | Total: 7)
+[PRODUTOR 1] Inseriu: 48        (Pos: 3 | Total: 8)
+        [CONSUMIDOR 1] Retirou: 35      (Pos: 4 | Total: 7)
+[PRODUTOR 2] Inseriu: 72        (Pos: 4 | Total: 8)
+        [CONSUMIDOR 2] Retirou: 81      (Pos: 5 | Total: 7)
+[PRODUTOR 1] Inseriu: 48        (Pos: 5 | Total: 8)
+        [CONSUMIDOR 1] Retirou: 61      (Pos: 6 | Total: 7)
+[PRODUTOR 2] Inseriu: 26        (Pos: 6 | Total: 8)
+        [CONSUMIDOR 2] Retirou: 27      (Pos: 7 | Total: 7)
+[PRODUTOR 1] Inseriu: 30        (Pos: 7 | Total: 8)
+        [CONSUMIDOR 1] Retirou: 10      (Pos: 0 | Total: 7)
+        [CONSUMIDOR 2] Retirou: 45      (Pos: 1 | Total: 6)
+        [CONSUMIDOR 1] Retirou: 71      (Pos: 2 | Total: 5)
+        [CONSUMIDOR 2] Retirou: 48      (Pos: 3 | Total: 4)
+        [CONSUMIDOR 1] Retirou: 72      (Pos: 4 | Total: 3)
+        [CONSUMIDOR 2] Retirou: 48      (Pos: 5 | Total: 2)
+        [CONSUMIDOR 1] Retirou: 26      (Pos: 6 | Total: 1)
+        [CONSUMIDOR 2] Retirou: 30      (Pos: 7 | Total: 0)
+------------------------------------------------------------------------
+CONCLUSÃO
+
+Ao escalonar múltiplas threads produtoras e consumidoras, a principal mudança conceitual é a obrigatoriedade do uso do laço while (em vez de if) para verificar a variável de condição.
+Isso garante que, se uma thread for acordada mas perder o controle do mutex para outra thread concorrente antes de agir, ela reavaliará o estado da fila (cheia ou vazia) ao retomar o processamento, evitando acessos indevidos.
+Além disso, o uso de pthread_cond_broadcast em vez de signal torna-se mais seguro, pois acorda todas as threads bloqueadas, evitando cenários onde o sinal acorda a thread errada (ex: um produtor acordando outro produtor em vez de um consumidor) e cause um deadlock lógico.
+------------------------------------------------------------------------
+
+
+5)Escreva dois programas prog1.c e prog2.c que trocam dados através de um mesmo arquivo mapeado para memória (de cada um).
+------------------------------------------------------------------------
+ARQUIVO q5.c
+
+#include <stdio.h>
+
+
+    return 0;
+}
+------------------------------------------------------------------------
+COMPILAÇÃO E EXECUÇÃO
+
+$ gcc -Wall -o q5 q5.c && ./q5
+------------------------------------------------------------------------
+RESULTADO
+
+[PRODUTOR 1] Inseriu: 88        (Pos: 0 | Total: 1)
+
+        [CONSUMIDOR 1] Retirou: 26      (Pos: 6 | Total: 1)
+        [CONSUMIDOR 2] Retirou: 30      (Pos: 7 | Total: 0)
+------------------------------------------------------------------------
+CONCLUSÃO
+
+Ao escalonar múltiplas threads produtoras e consumidoras, a principal mudança conceitual é a obrigatoriedade do uso do laço while (em vez de if) para verificar a variável de condição.
+Isso garante que, se uma thread for acordada mas perder o controle do mutex para outra thread concorrente antes de agir, ela reavaliará o estado da fila (cheia ou vazia) ao retomar o processamento, evitando acessos indevidos.
+Além disso, o uso de pthread_cond_broadcast em vez de signal torna-se mais seguro, pois acorda todas as threads bloqueadas, evitando cenários onde o sinal acorda a thread errada (ex: um produtor acordando outro produtor em vez de um consumidor) e cause um deadlock lógico.
+------------------------------------------------------------------------
+
+
+6)Escreva dois programas prog1.c e prog2.c que trocam dados através de um mesmo arquivo mapeado para memória (de cada um).
+------------------------------------------------------------------------
+ARQUIVO q6.c
+
+#include <stdio.h>
+
+
+    return 0;
+}
+------------------------------------------------------------------------
+COMPILAÇÃO E EXECUÇÃO
+
+$ gcc -Wall -o q6 q6.c && ./q6
+------------------------------------------------------------------------
+RESULTADO
+
+[PRODUTOR 1] Inseriu: 88        (Pos: 0 | Total: 1)
+
+        [CONSUMIDOR 1] Retirou: 26      (Pos: 6 | Total: 1)
+        [CONSUMIDOR 2] Retirou: 30      (Pos: 7 | Total: 0)
+------------------------------------------------------------------------
+CONCLUSÃO
+
+Ao escalonar múltiplas threads produtoras e consumidoras, a principal mudança conceitual é a obrigatoriedade do uso do laço while (em vez de if) para verificar a variável de condição.
+Isso garante que, se uma thread for acordada mas perder o controle do mutex para outra thread concorrente antes de agir, ela reavaliará o estado da fila (cheia ou vazia) ao retomar o processamento, evitando acessos indevidos.
+Além disso, o uso de pthread_cond_broadcast em vez de signal torna-se mais seguro, pois acorda todas as threads bloqueadas, evitando cenários onde o sinal acorda a thread errada (ex: um produtor acordando outro produtor em vez de um consumidor) e cause um deadlock lógico.

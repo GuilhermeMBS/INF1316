@@ -1,0 +1,16 @@
+1) Faça um programa que usa myallocate para alocar e desalocar memória dinâmiamente.
+
+2) Execute map-exemplo.c passando o nome de um arquivo como parámetro. Qual foi a novidade?
+
+3) Modifique map-exemplo.c para:
+    a) Verificar quantas páginas de memória o seu arquivo precisou
+    b) Medir o quão mais rápido foi a escrita do arquivo mapeado quando comparado com a E/S em disco. Dica: use gettimeofday()
+
+4) Escreva dois programas prog1.c e prog2.c que trocam dados através de um mesmo arquivo mapeado para memória (de cada um).
+
+5) Escreva um programa que faz um mapeamento de arquivo para memória e depois escreve novos caracteres no final do arquivo. O que voce precisa fazer para evitar um SegFault?
+O Linux também suporta uma função:
+    void *mremap(void *addr, size_t old_sz, size_t
+    new_sz, unsigned long flags) // addr precisa estar alinhado com o início da página
+
+6) Re-escreva o seu programa do item anterior usando mremap()
