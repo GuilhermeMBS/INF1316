@@ -801,296 +801,319 @@ Dessa forma a vantagem real apareceu: enquanto o read() perde muito tempo fazend
 ------------------------------------------------------------------------
 
 
-4)Escreva dois programas prog1.c e prog2.c que trocam dados através de um mesmo arquivo mapeado para memória (de cada um).
+4) Escreva dois programas prog1.c e prog2.c que trocam dados através de um mesmo arquivo mapeado para memória (de cada um).
 ------------------------------------------------------------------------
-ARQUIVO q4.c
+ARQUIVO prog1.c
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <pthread.h>
+#include <string.h>
+#include <fcntl.h>
 #include <unistd.h>
-#include <time.h>
-
-#define MAXFILA 8
-#define TOTAL_ELEMENTOS 64
-#define NUM_PRODUTORES 2
-#define NUM_CONSUMIDORES 2
+#include <sys/mman.h>
 
 
-int fila[MAXFILA];
-int in = 0, out = 0, count = 0;
+#define FILE_NAME "shared_data.bin"
+#define SHARED_SIZE 4096
 
-pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
-pthread_cond_t cond_produtor = PTHREAD_COND_INITIALIZER;
-pthread_cond_t cond_consumidor = PTHREAD_COND_INITIALIZER;
 
-void* produtor(void* arg) {
-    long id = (long)arg;
-    int qtd_por_produtor = TOTAL_ELEMENTOS / NUM_PRODUTORES;
-
-    for (int i = 0; i < qtd_por_produtor; i++) {
-        int item = rand() % 100; 
-
-        pthread_mutex_lock(&mutex);
-
-        while (count == MAXFILA) {
-            pthread_cond_wait(&cond_produtor, &mutex);
-        }
-
-        fila[in] = item;
-        printf("[PRODUTOR %ld] Inseriu: %d \t(Pos: %d | Total: %d)\n", id, item, in, count + 1);
-        in = (in + 1) % MAXFILA;
-        count++;
-
-        pthread_cond_broadcast(&cond_consumidor);
-        pthread_mutex_unlock(&mutex);
-
-        sleep(1);
-    }
-    return NULL;
-}
-
-void* consumidor(void* arg) {
-    long id = (long)arg;
-    int qtd_por_consumidor = TOTAL_ELEMENTOS / NUM_CONSUMIDORES;
-
-    for (int i = 0; i < qtd_por_consumidor; i++) {
-        pthread_mutex_lock(&mutex);
-
-        while (count == 0) {
-            pthread_cond_wait(&cond_consumidor, &mutex);
-        }
-
-        int item = fila[out];
-        printf("\t[CONSUMIDOR %ld] Retirou: %d \t(Pos: %d | Total: %d)\n", id, item, out, count - 1);
-        out = (out + 1) % MAXFILA;
-        count--;
-
-        pthread_cond_broadcast(&cond_produtor);
-        pthread_mutex_unlock(&mutex);
-
-        sleep(2);
-    }
-    return NULL;
-}
-
-int main() {
-    pthread_t produtores[NUM_PRODUTORES];
-    pthread_t consumidores[NUM_CONSUMIDORES];
-    srand(time(NULL));
-
-    for (long i = 0; i < NUM_PRODUTORES; i++) {
-        pthread_create(&produtores[i], NULL, produtor, (void*)(i + 1));
-    }
-    for (long i = 0; i < NUM_CONSUMIDORES; i++) {
-        pthread_create(&consumidores[i], NULL, consumidor, (void*)(i + 1));
+int
+main(void)
+{
+    int fd = open(FILE_NAME, O_RDWR | O_CREAT, 0666);
+    if (fd == -1) {
+        perror("open prog1");
+        exit(EXIT_FAILURE);
     }
 
-    for (int i = 0; i < NUM_PRODUTORES; i++) {
-        pthread_join(produtores[i], NULL);
-    }
-    for (int i = 0; i < NUM_CONSUMIDORES; i++) {
-        pthread_join(consumidores[i], NULL);
+    // Defines the archive's size (extends it to avoid Seg Fault)
+    if (ftruncate(fd, SHARED_SIZE) == -1) {
+        perror("ftruncate");
+        close(fd);
+        exit(EXIT_FAILURE);
     }
 
+    char *shared_mem = mmap(NULL, SHARED_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    if (shared_mem == MAP_FAILED) {
+        perror("mmap prog1");
+        close(fd);
+        exit(EXIT_FAILURE);
+    }
+    
+    close(fd);
+
+    printf("PROG 1 | Writing in shared memory...\n");
+    const char *msg = "[PROG 1] Message from Prog1. Can you read me?";
+    strncpy(shared_mem, msg, SHARED_SIZE);
+    printf("PROG 1 | Message successfully written!\n");
+
+    munmap(shared_mem, SHARED_SIZE);
+    
     return 0;
 }
+
+ARQUIVO prog2.c
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/mman.h>
+
+
+#define FILE_NAME "shared_data.bin"
+#define SHARED_SIZE 4096
+
+
+int
+main(void)
+{
+    // Open file with read only
+    int fd = open(FILE_NAME, O_RDONLY);
+    if (fd == -1) {
+        perror("open prog2 (did you run prog1 first?)");
+        exit(EXIT_FAILURE);
+    }
+
+    char *shared_mem = mmap(NULL, SHARED_SIZE, PROT_READ, MAP_SHARED, fd, 0);
+    if (shared_mem == MAP_FAILED) {
+        perror("mmap prog2");
+        close(fd);
+        exit(EXIT_FAILURE);
+    }
+    
+    close(fd);
+
+    printf("PROG 2 | Reading Shared Memory:\n");
+    printf("========================================\n");
+    printf("%s\n", shared_mem);
+    printf("========================================\n");
+
+    munmap(shared_mem, SHARED_SIZE);
+    
+    return 0;
+}
+
 ------------------------------------------------------------------------
 COMPILAÇÃO E EXECUÇÃO
 
-$ gcc -Wall -o newProdutorConsumidor newProdutorConsumidor.c && ./newProdutorConsumidor
+$ gcc -Wall -o prog1 prog1.c && gcc -Wall -o prog2 prog2.c && ./prog1 && ./prog2 && cat shared_data.bin
 ------------------------------------------------------------------------
 RESULTADO
 
-[PRODUTOR 1] Inseriu: 88        (Pos: 0 | Total: 1)
-[PRODUTOR 2] Inseriu: 79        (Pos: 1 | Total: 2)
-        [CONSUMIDOR 1] Retirou: 88      (Pos: 0 | Total: 1)
-        [CONSUMIDOR 2] Retirou: 79      (Pos: 1 | Total: 0)
-[PRODUTOR 1] Inseriu: 9         (Pos: 2 | Total: 1)
-[PRODUTOR 2] Inseriu: 88        (Pos: 3 | Total: 2)
-        [CONSUMIDOR 1] Retirou: 9       (Pos: 2 | Total: 1)
-        [CONSUMIDOR 2] Retirou: 88      (Pos: 3 | Total: 0)
-[PRODUTOR 1] Inseriu: 70        (Pos: 4 | Total: 1)
-[PRODUTOR 2] Inseriu: 88        (Pos: 5 | Total: 2)
-[PRODUTOR 1] Inseriu: 32        (Pos: 6 | Total: 3)
-[PRODUTOR 2] Inseriu: 27        (Pos: 7 | Total: 4)
-        [CONSUMIDOR 1] Retirou: 70      (Pos: 4 | Total: 3)
-        [CONSUMIDOR 2] Retirou: 88      (Pos: 5 | Total: 2)
-[PRODUTOR 1] Inseriu: 97        (Pos: 0 | Total: 3)
-[PRODUTOR 2] Inseriu: 58        (Pos: 1 | Total: 4)
-[PRODUTOR 2] Inseriu: 26        (Pos: 2 | Total: 5)
-[PRODUTOR 1] Inseriu: 62        (Pos: 3 | Total: 6)
-        [CONSUMIDOR 2] Retirou: 32      (Pos: 6 | Total: 5)
-        [CONSUMIDOR 1] Retirou: 27      (Pos: 7 | Total: 4)
-[PRODUTOR 2] Inseriu: 58        (Pos: 4 | Total: 5)
-[PRODUTOR 1] Inseriu: 70        (Pos: 5 | Total: 6)
-[PRODUTOR 2] Inseriu: 7         (Pos: 6 | Total: 7)
-[PRODUTOR 1] Inseriu: 0         (Pos: 7 | Total: 8)
-        [CONSUMIDOR 2] Retirou: 97      (Pos: 0 | Total: 7)
-        [CONSUMIDOR 1] Retirou: 58      (Pos: 1 | Total: 6)
-[PRODUTOR 2] Inseriu: 27        (Pos: 0 | Total: 7)
-[PRODUTOR 1] Inseriu: 31        (Pos: 1 | Total: 8)
-        [CONSUMIDOR 2] Retirou: 26      (Pos: 2 | Total: 7)
-[PRODUTOR 1] Inseriu: 15        (Pos: 2 | Total: 8)
-        [CONSUMIDOR 1] Retirou: 62      (Pos: 3 | Total: 7)
-[PRODUTOR 2] Inseriu: 9         (Pos: 3 | Total: 8)
-        [CONSUMIDOR 2] Retirou: 58      (Pos: 4 | Total: 7)
-[PRODUTOR 1] Inseriu: 93        (Pos: 4 | Total: 8)
-        [CONSUMIDOR 1] Retirou: 70      (Pos: 5 | Total: 7)
-[PRODUTOR 2] Inseriu: 94        (Pos: 5 | Total: 8)
-        [CONSUMIDOR 2] Retirou: 7       (Pos: 6 | Total: 7)
-[PRODUTOR 2] Inseriu: 54        (Pos: 6 | Total: 8)
-        [CONSUMIDOR 1] Retirou: 0       (Pos: 7 | Total: 7)
-[PRODUTOR 1] Inseriu: 92        (Pos: 7 | Total: 8)
-        [CONSUMIDOR 2] Retirou: 27      (Pos: 0 | Total: 7)
-[PRODUTOR 1] Inseriu: 75        (Pos: 0 | Total: 8)
-        [CONSUMIDOR 1] Retirou: 31      (Pos: 1 | Total: 7)
-[PRODUTOR 2] Inseriu: 28        (Pos: 1 | Total: 8)
-        [CONSUMIDOR 2] Retirou: 15      (Pos: 2 | Total: 7)
-[PRODUTOR 1] Inseriu: 66        (Pos: 2 | Total: 8)
-        [CONSUMIDOR 1] Retirou: 9       (Pos: 3 | Total: 7)
-[PRODUTOR 2] Inseriu: 10        (Pos: 3 | Total: 8)
-        [CONSUMIDOR 2] Retirou: 93      (Pos: 4 | Total: 7)
-[PRODUTOR 1] Inseriu: 85        (Pos: 4 | Total: 8)
-        [CONSUMIDOR 1] Retirou: 94      (Pos: 5 | Total: 7)
-[PRODUTOR 2] Inseriu: 75        (Pos: 5 | Total: 8)
-        [CONSUMIDOR 2] Retirou: 54      (Pos: 6 | Total: 7)
-        [CONSUMIDOR 1] Retirou: 92      (Pos: 7 | Total: 6)
-[PRODUTOR 2] Inseriu: 26        (Pos: 6 | Total: 7)
-[PRODUTOR 1] Inseriu: 76        (Pos: 7 | Total: 8)
-        [CONSUMIDOR 2] Retirou: 75      (Pos: 0 | Total: 7)
-[PRODUTOR 1] Inseriu: 86        (Pos: 0 | Total: 8)
-        [CONSUMIDOR 1] Retirou: 28      (Pos: 1 | Total: 7)
-[PRODUTOR 2] Inseriu: 6         (Pos: 1 | Total: 8)
-        [CONSUMIDOR 2] Retirou: 66      (Pos: 2 | Total: 7)
-[PRODUTOR 1] Inseriu: 66        (Pos: 2 | Total: 8)
-        [CONSUMIDOR 1] Retirou: 10      (Pos: 3 | Total: 7)
-[PRODUTOR 2] Inseriu: 76        (Pos: 3 | Total: 8)
-        [CONSUMIDOR 1] Retirou: 85      (Pos: 4 | Total: 7)
-[PRODUTOR 1] Inseriu: 74        (Pos: 4 | Total: 8)
-        [CONSUMIDOR 2] Retirou: 75      (Pos: 5 | Total: 7)
-[PRODUTOR 2] Inseriu: 99        (Pos: 5 | Total: 8)
-        [CONSUMIDOR 1] Retirou: 26      (Pos: 6 | Total: 7)
-[PRODUTOR 1] Inseriu: 55        (Pos: 6 | Total: 8)
-        [CONSUMIDOR 2] Retirou: 76      (Pos: 7 | Total: 7)
-[PRODUTOR 2] Inseriu: 23        (Pos: 7 | Total: 8)
-        [CONSUMIDOR 1] Retirou: 86      (Pos: 0 | Total: 7)
-[PRODUTOR 2] Inseriu: 33        (Pos: 0 | Total: 8)
-        [CONSUMIDOR 2] Retirou: 6       (Pos: 1 | Total: 7)
-[PRODUTOR 1] Inseriu: 57        (Pos: 1 | Total: 8)
-        [CONSUMIDOR 2] Retirou: 66      (Pos: 2 | Total: 7)
-[PRODUTOR 2] Inseriu: 85        (Pos: 2 | Total: 8)
-        [CONSUMIDOR 1] Retirou: 76      (Pos: 3 | Total: 7)
-[PRODUTOR 1] Inseriu: 67        (Pos: 3 | Total: 8)
-        [CONSUMIDOR 2] Retirou: 74      (Pos: 4 | Total: 7)
-[PRODUTOR 2] Inseriu: 3         (Pos: 4 | Total: 8)
-        [CONSUMIDOR 1] Retirou: 99      (Pos: 5 | Total: 7)
-[PRODUTOR 1] Inseriu: 44        (Pos: 5 | Total: 8)
-        [CONSUMIDOR 2] Retirou: 55      (Pos: 6 | Total: 7)
-        [CONSUMIDOR 1] Retirou: 23      (Pos: 7 | Total: 6)
-[PRODUTOR 2] Inseriu: 82        (Pos: 6 | Total: 7)
-[PRODUTOR 1] Inseriu: 67        (Pos: 7 | Total: 8)
-        [CONSUMIDOR 2] Retirou: 33      (Pos: 0 | Total: 7)
-[PRODUTOR 1] Inseriu: 27        (Pos: 0 | Total: 8)
-        [CONSUMIDOR 1] Retirou: 57      (Pos: 1 | Total: 7)
-[PRODUTOR 2] Inseriu: 34        (Pos: 1 | Total: 8)
-        [CONSUMIDOR 1] Retirou: 85      (Pos: 2 | Total: 7)
-[PRODUTOR 1] Inseriu: 91        (Pos: 2 | Total: 8)
-        [CONSUMIDOR 2] Retirou: 67      (Pos: 3 | Total: 7)
-[PRODUTOR 2] Inseriu: 73        (Pos: 3 | Total: 8)
-        [CONSUMIDOR 1] Retirou: 3       (Pos: 4 | Total: 7)
-[PRODUTOR 1] Inseriu: 35        (Pos: 4 | Total: 8)
-        [CONSUMIDOR 2] Retirou: 44      (Pos: 5 | Total: 7)
-[PRODUTOR 2] Inseriu: 81        (Pos: 5 | Total: 8)
-        [CONSUMIDOR 1] Retirou: 82      (Pos: 6 | Total: 7)
-[PRODUTOR 2] Inseriu: 61        (Pos: 6 | Total: 8)
-        [CONSUMIDOR 2] Retirou: 67      (Pos: 7 | Total: 7)
-[PRODUTOR 1] Inseriu: 27        (Pos: 7 | Total: 8)
-        [CONSUMIDOR 1] Retirou: 27      (Pos: 0 | Total: 7)
-[PRODUTOR 2] Inseriu: 10        (Pos: 0 | Total: 8)
-        [CONSUMIDOR 2] Retirou: 34      (Pos: 1 | Total: 7)
-[PRODUTOR 1] Inseriu: 45        (Pos: 1 | Total: 8)
-        [CONSUMIDOR 1] Retirou: 91      (Pos: 2 | Total: 7)
-[PRODUTOR 2] Inseriu: 71        (Pos: 2 | Total: 8)
-        [CONSUMIDOR 2] Retirou: 73      (Pos: 3 | Total: 7)
-[PRODUTOR 1] Inseriu: 48        (Pos: 3 | Total: 8)
-        [CONSUMIDOR 1] Retirou: 35      (Pos: 4 | Total: 7)
-[PRODUTOR 2] Inseriu: 72        (Pos: 4 | Total: 8)
-        [CONSUMIDOR 2] Retirou: 81      (Pos: 5 | Total: 7)
-[PRODUTOR 1] Inseriu: 48        (Pos: 5 | Total: 8)
-        [CONSUMIDOR 1] Retirou: 61      (Pos: 6 | Total: 7)
-[PRODUTOR 2] Inseriu: 26        (Pos: 6 | Total: 8)
-        [CONSUMIDOR 2] Retirou: 27      (Pos: 7 | Total: 7)
-[PRODUTOR 1] Inseriu: 30        (Pos: 7 | Total: 8)
-        [CONSUMIDOR 1] Retirou: 10      (Pos: 0 | Total: 7)
-        [CONSUMIDOR 2] Retirou: 45      (Pos: 1 | Total: 6)
-        [CONSUMIDOR 1] Retirou: 71      (Pos: 2 | Total: 5)
-        [CONSUMIDOR 2] Retirou: 48      (Pos: 3 | Total: 4)
-        [CONSUMIDOR 1] Retirou: 72      (Pos: 4 | Total: 3)
-        [CONSUMIDOR 2] Retirou: 48      (Pos: 5 | Total: 2)
-        [CONSUMIDOR 1] Retirou: 26      (Pos: 6 | Total: 1)
-        [CONSUMIDOR 2] Retirou: 30      (Pos: 7 | Total: 0)
+PROG 1 | Writing in shared memory...
+PROG 1 | Message successfully written!
+PROG 2 | Reading Shared Memory:
+========================================
+[PROG 1] Message from Prog1. Can you read me?
+========================================
+[PROG 1] Message from Prog1. Can you read me?
 ------------------------------------------------------------------------
 CONCLUSÃO
 
-Ao escalonar múltiplas threads produtoras e consumidoras, a principal mudança conceitual é a obrigatoriedade do uso do laço while (em vez de if) para verificar a variável de condição.
-Isso garante que, se uma thread for acordada mas perder o controle do mutex para outra thread concorrente antes de agir, ela reavaliará o estado da fila (cheia ou vazia) ao retomar o processamento, evitando acessos indevidos.
-Além disso, o uso de pthread_cond_broadcast em vez de signal torna-se mais seguro, pois acorda todas as threads bloqueadas, evitando cenários onde o sinal acorda a thread errada (ex: um produtor acordando outro produtor em vez de um consumidor) e cause um deadlock lógico.
+Basicamente criamos na prática a forma mais rápida que existe de fazer dois programas "conversarem" (IPC), usando o mmap com a flag MAP_SHARED.
+Fizemos um escritor (prog1.c) e um leitor (prog2.c) que abrem o mesmo arquivo e o mapeiam.
+Ao invés de duplicar o arquivo na RAM, o Kernel apontou as Tabelas de Páginas dos dois processos exatamente para o mesmo quadro físico no Page Cache.
+O resultado é que o escritor modifica a memória RAM dele, o hardware liga o Dirty Bit, e o leitor enxerga a mensagem instantaneamente sem precisar usar read, write ou passar pelo disco.
 ------------------------------------------------------------------------
 
 
-5)Escreva dois programas prog1.c e prog2.c que trocam dados através de um mesmo arquivo mapeado para memória (de cada um).
+5) Escreva um programa que faz um mapeamento de arquivo para memória e depois escreve novos caracteres no final do arquivo. O que voce precisa fazer para evitar um SegFault?
+O Linux também suporta uma função:
+    void *mremap(void *addr, size_t old_sz, size_t
+    new_sz, unsigned long flags) // addr precisa estar alinhado com o início da página
 ------------------------------------------------------------------------
 ARQUIVO q5.c
 
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
 
+
+#define FILE_NAME "data.txt"
+
+
+int
+main(void)
+{
+    int fd = open(FILE_NAME, O_RDWR | O_CREAT, 0666);
+    if (fd == -1) {
+        perror("open");
+        exit(EXIT_FAILURE);
+    }
+
+    struct stat sb;
+    if (fstat(fd, &sb) == -1) {
+        perror("fstat");
+        close(fd);
+        exit(EXIT_FAILURE);
+    }
+
+    size_t prev_size = sb.st_size;
+    const char *new_text = "==> Extension Text\n";
+    size_t new_size = prev_size + strlen(new_text);
+
+    // Extends the archive's size, preventing Seg Fault
+    if (ftruncate(fd, new_size) == -1) {
+        perror("ftruncate");
+        close(fd);
+        exit(EXIT_FAILURE);
+    }
+
+    char *p = mmap(NULL, new_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    if (p == MAP_FAILED) {
+        perror("mmap");
+        close(fd);
+        exit(EXIT_FAILURE);
+    }
+    
+    close(fd);
+
+    strcpy(&p[prev_size], new_text);
+    puts("\nNew text successfully added!");
+    printf("Previous Size: %zu bytes\nNew Size: %zu bytes.\n", 
+           prev_size, new_size);
+
+    munmap(p, new_size);
 
     return 0;
 }
+
 ------------------------------------------------------------------------
 COMPILAÇÃO E EXECUÇÃO
 
-$ gcc -Wall -o q5 q5.c && ./q5
+$ gcc -Wall -o q5 q5.c && ./q5 && cat data.txt && ./q5 && cat data.txt
 ------------------------------------------------------------------------
 RESULTADO
 
-[PRODUTOR 1] Inseriu: 88        (Pos: 0 | Total: 1)
+New text successfully added!
+Previous Size: 0 bytes
+New Size: 19 bytes.
+==> Extension Text
 
-        [CONSUMIDOR 1] Retirou: 26      (Pos: 6 | Total: 1)
-        [CONSUMIDOR 2] Retirou: 30      (Pos: 7 | Total: 0)
+New text successfully added!
+Previous Size: 19 bytes
+New Size: 38 bytes.
+==> Extension Text
+==> Extension Text
 ------------------------------------------------------------------------
 CONCLUSÃO
 
-Ao escalonar múltiplas threads produtoras e consumidoras, a principal mudança conceitual é a obrigatoriedade do uso do laço while (em vez de if) para verificar a variável de condição.
-Isso garante que, se uma thread for acordada mas perder o controle do mutex para outra thread concorrente antes de agir, ela reavaliará o estado da fila (cheia ou vazia) ao retomar o processamento, evitando acessos indevidos.
-Além disso, o uso de pthread_cond_broadcast em vez de signal torna-se mais seguro, pois acorda todas as threads bloqueadas, evitando cenários onde o sinal acorda a thread errada (ex: um produtor acordando outro produtor em vez de um consumidor) e cause um deadlock lógico.
+Para evitar o Segmentation Fault ao tentar escrever além do limite de um arquivo mapeado, é necessário expandir fisicamente o arquivo no disco primeiro usando a função ftruncate().
+Feito isso, basta chamar o mmap() passando já esse novo tamanho atualizado, garantindo que a memória virtual alocada seja suficiente para comportar os novos caracteres.
 ------------------------------------------------------------------------
 
 
-6)Escreva dois programas prog1.c e prog2.c que trocam dados através de um mesmo arquivo mapeado para memória (de cada um).
+6) Re-escreva o seu programa do item anterior usando mremap()
 ------------------------------------------------------------------------
 ARQUIVO q6.c
 
+#define _GNU_SOURCE // Nedded to use the flag MREMAP_MAYMOVE in mremap()
+
+
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
 
 
-    return 0;
+#define FILE_NAME "data.txt"
+
+
+int
+main(void)
+{
+    int fd = open(FILE_NAME, O_RDWR | O_CREAT, 0666);
+    if (fd == -1) {
+        perror("open");
+        exit(EXIT_FAILURE);
+    }
+
+    struct stat sb;
+    if (fstat(fd, &sb) == -1) {
+        perror("fstat");
+        close(fd);
+        exit(EXIT_FAILURE);
+    }
+
+    /**
+     * Separate the actual file size (write offset) from the initial mapping size.
+     * If the file is empty (0 bytes), we map 1 dummy byte to satisfy mmap(),
+     * but keep write_offset at 0 so we don't leave a leading NULL byte at index 0.
+     */
+    size_t write_offset = (size_t)sb.st_size;
+    size_t old_map_size = (write_offset > 0) ? write_offset : 1;
+
+    char *p = mmap(NULL, old_map_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    if (p == MAP_FAILED) {
+        perror("mmap");
+        close(fd);
+        exit(EXIT_FAILURE);
+    }
+
+    const char *new_text = "==> Text appended using mremap.\n";
+    size_t text_len = strlen(new_text);
+    size_t new_size = write_offset + text_len;
+
+    if (ftruncate(fd, (off_t)new_size) == -1) {
+        perror("ftruncate");
+        munmap(p, old_map_size);
+        close(fd);
+        exit(EXIT_FAILURE);
+    }
+
+    char *new_p = mremap(p, old_map_size, new_size, MREMAP_MAYMOVE);
+    if (new_p == MAP_FAILED) {
+        perror("mremap");
+        munmap(p, old_map_size);
+        close(fd);
+        exit(EXIT_FAILURE);
+    }
+
+    // Write starting at the true end of the original file (0 if initially empty)
+    memcpy(&new_p[write_offset], new_text, text_len);
+
+    printf("Mapping resized from %zu to %zu bytes at address %p\n",
+           write_offset, new_size, (void *)new_p);
+
+    if (munmap(new_p, new_size) == -1) {
+        perror("munmap");
+        close(fd);
+        exit(EXIT_FAILURE);
+    }
+
+    if (close(fd) == -1) {
+        perror("close");
+        exit(EXIT_FAILURE);
+    }
+
+    return EXIT_SUCCESS;
 }
+
 ------------------------------------------------------------------------
 COMPILAÇÃO E EXECUÇÃO
 
-$ gcc -Wall -o q6 q6.c && ./q6
+$ gcc -Wall -o q6 q6.c && ./q6 && cat data.txt && ./q6 && cat data.txt
 ------------------------------------------------------------------------
 RESULTADO
 
-[PRODUTOR 1] Inseriu: 88        (Pos: 0 | Total: 1)
-
-        [CONSUMIDOR 1] Retirou: 26      (Pos: 6 | Total: 1)
-        [CONSUMIDOR 2] Retirou: 30      (Pos: 7 | Total: 0)
+Mapping resized from 0 to 32 bytes at address 0x77a45b8ad000
+==> Text appended using mremap.
+Mapping resized from 32 to 64 bytes at address 0x714dd261c000
+==> Text appended using mremap.
+==> Text appended using mremap.
 ------------------------------------------------------------------------
 CONCLUSÃO
 
-Ao escalonar múltiplas threads produtoras e consumidoras, a principal mudança conceitual é a obrigatoriedade do uso do laço while (em vez de if) para verificar a variável de condição.
-Isso garante que, se uma thread for acordada mas perder o controle do mutex para outra thread concorrente antes de agir, ela reavaliará o estado da fila (cheia ou vazia) ao retomar o processamento, evitando acessos indevidos.
-Além disso, o uso de pthread_cond_broadcast em vez de signal torna-se mais seguro, pois acorda todas as threads bloqueadas, evitando cenários onde o sinal acorda a thread errada (ex: um produtor acordando outro produtor em vez de um consumidor) e cause um deadlock lógico.
+Nesta questão, reescrevemos o programa para expandir o mapeamento dinamicamente usando mremap(), funcionando como um realloc() para páginas de memória sem precisar desmapear e mapear tudo de novo.
+Primeiro esticamos o arquivo físico no disco com ftruncate() e, em seguida, expandimos a área na memória virtual com mremap() usando a flag MREMAP_MAYMOVE (que permite ao Kernel mover os ponteiros na Tabela de Páginas caso não haja espaço contíguo livre).
+Durante os testes, notamos que quando o arquivo nascia vazio (0 bytes), precisávamos forçar o tamanho inicial do mmap para 1 byte para a chamada não falhar.
+Porém, como o ftruncate preenche o espaço novo com zeros, usar esse tamanho "falso" de 1 byte como índice de escrita acabava pulando a posição 0 e deixava um caractere NULL (\0) no começo do arquivo.
+Resolvemos isso separando o tamanho mínimo do mapeamento (old_map_size) do deslocamento real de escrita (write_offset = 0) e trocando strcpy por memcpy, gravando o texto na posição exata sem caracteres nulos indesejados.
