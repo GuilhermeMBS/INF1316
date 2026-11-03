@@ -1,0 +1,21 @@
+1) Escreva um programa log_gen.c que usa void gerar_operacoes(int n) para que ele escreva
+10.000 operações em um arquivo log.txt 
+
+2) Escreva um outro programa multi-threaded (ou multi-processo) onde:
+a) uma thread é o cliente que lê o log e escreve/lê o
+cache e/ou o banco de dados
+b) outra acessa o cache e
+c) outra thread é o que acessa o banco de dados
+
+3)Implemente um banco de dados hipotético de 1000 entradas
+(um vetor[1000]) e um cache de 100 entradas, e que:
+a) lê as entradas do arquivo log ciclicamente, em loop infinito.
+b) implementa a estratégias Cache-aside caching (dados
+acessados no BD são replicados no cache) e remove as entradas mais antigas
+c) e trata o sinal Cntl-Z, e nesse caso limpa todo o cache,
+mas continua acessando o banco de dados.
+
+4) faça o mesmo com a politica Cache write through (= a cada
+acesso de escrita no cache, o bando de dados também é atualizado)
+
+5) Discuta as diferenças em termos de em termos de tempo de processamento 

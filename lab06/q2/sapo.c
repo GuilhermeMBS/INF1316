@@ -55,6 +55,9 @@ int main()
     for(t=0;t < NUM_THREADS; t++) pthread_join(threads[t],NULL);
 
     printf("\n Acabou!!\n");
+    
     pthread_exit(NULL);
+    pthread_mutex_destroy (&lock);
+
     return 0;
 }
