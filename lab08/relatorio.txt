@@ -138,7 +138,9 @@ typedef struct {
 static cache_entry_t g_cache[CACHE_SIZE];
 static int g_db[DB_SIZE];
 static unsigned long long g_lru_clock = 0;
-static volatile sig_atomic_t g_clear_cache = 0;
+static volatile sig_atomic_t g_clear_cache = 0; /* To guarantee that the signal can be changed even through an
+                                                    asynchronous interruption. This type is free of data races.
+*/
 
 // Inter-process Communication for Database
 static pthread_mutex_t db_mtx = PTHREAD_MUTEX_INITIALIZER;
