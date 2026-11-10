@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -7,52 +8,40 @@
 #include <sys/stat.h>
 #include <sys/dir.h>
 #include <sys/param.h>
+#include <dirent.h>
 
 char pathName[MAXPATHLEN];
 
 extern int alphasort();
 
-int countSubDir(char *pathName) {
-    int count = 0;
-    struct direct **files;
+long long sumSubDir(const char *dirName) {
+    DIR *dir;
+    struct dirent *entry;
+    struct stat atributes;
+    
+    long long totalSize = 0;
+    char path[MAXPATHLEN];
 
-    count = scandir(pathName, &files, NULL, alphasort);
-    if (count <= 0) return 0;
+    dir = opendir(dirName);
+    if (dir == NULL) perror("Error while opening the directory");
 
-    for (int i = 0; i < count; i++) {
-        if (files[i]->d_type == DT_DIR) count += countSubDir(files[i]->d_name);
+    while ((entry = readdir(dir)) != NULL) {
+        if (strcmp(".", entry->d_name) == 0 || strcmp("..", entry->d_name) == 0) continue;
+        
+        snprintf(path, sizeof(path), "%s/%s", dirName, entry->d_name);
+        
+        if (stat(path, &atributes) == -1) perror("Error while opening the file");
+        
+        if (entry->d_type == DT_DIR) totalSize += sumSubDir(path);
+        else if (entry->d_type == DT_REG) totalSize += atributes.st_size;
     }
-    return count;
+
+    closedir(dir);
+    return totalSize;
 }
 
 int main() {
-    int count;
-    struct direct **files;
-
-    if (getwd(pathName) == NULL) perror("Error while opening current dir");
-
-    count = scandir(pathName, &files, NULL, alphasort);
-    if (count <= 0) perror("No files in this directory");
-
-    printf("Number of files = %d\n", count);
-
-    for (int i = 0; i < count; i++) {
-        struct stat atributes;
-
-        if (stat(files[i]->d_name, &atributes) == 0) {
-            time_t now = time(NULL);
-
-            double time_passed = difftime(now, atributes.st_ctime);
-            int days_passed = time_passed / (60 * 60 * 24);
-
-            printf("%s \t inode %lu \t size: %ld \t age: %d\n", 
-                files[i]->d_name, 
-                (unsigned long)atributes.st_ino, 
-                atributes.st_size, 
-                days_passed
-            );
-        }
-    }
+    printf("Soma dos tamanhos de todos os arquivos: %lld\n", sumSubDir("."));
 
     return 0;
 }
