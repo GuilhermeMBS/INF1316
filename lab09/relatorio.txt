@@ -1,0 +1,341 @@
+Guilherme Machado de Bragança Soares - 2410804
+João Pedro Capechi Telhado - 2410535
+
+1) Use o programa listaarquivo.c para imprimir o numero de inode, o tamanho (em bytes) e a idade em dias de cada arquivo do diretório corrente.
+Lembre-se que stat() espera o path completo do arquivo.
+------------------------------------------------------------------------
+ARQUIVO listaarquivo.c
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
+#include <unistd.h>
+
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <sys/dir.h>
+#include <sys/param.h>
+
+char pathName[MAXPATHLEN];
+
+extern int alphasort();
+
+int main() {
+    int count;
+    struct direct **files;
+
+    if (getwd(pathName) == NULL) perror("Error while opening current dir");
+
+    count = scandir(pathName, &files, NULL, alphasort);
+    if (count <= 0) perror("No files in this directory");
+
+    printf("Number of files = %d\n", count);
+
+    for (int i = 0; i < count; i++) {
+        struct stat atributes;
+
+        if (stat(files[i]->d_name, &atributes) == 0) {
+            time_t now = time(NULL);
+
+            double time_passed = difftime(now, atributes.st_ctime);
+            int days_passed = time_passed / (60 * 60 * 24);
+
+            printf("%s \t inode %lu \t size: %ld \t age: %d\n", 
+                files[i]->d_name, 
+                (unsigned long)atributes.st_ino, 
+                atributes.st_size, 
+                days_passed
+            );
+        }
+    }
+
+    return 0;
+}
+------------------------------------------------------------------------
+COMPILAÇÃO E EXECUÇÃO
+
+$ gcc -Wall -o listaarquivo listaarquivo.c && ./listaarquivo
+------------------------------------------------------------------------
+RESULTADO
+
+listaarquivo.c: In function ‘main’:
+listaarquivo.c:19:5: warning: ‘getwd’ is deprecated [-Wdeprecated-declarations]
+   19 |     if (getwd(pathName) == NULL) perror("Error while opening current dir");
+      |     ^~
+In file included from listaarquivo.c:4:
+/usr/include/unistd.h:545:14: note: declared here
+  545 | extern char *getwd (char *__buf)
+      |              ^~~~~
+/usr/bin/ld: /tmp/ccZ2ww5R.o: in function `main':
+listaarquivo.c:(.text+0x29): warning: the `getwd' function is dangerous and should not be used.
+Number of files = 4
+.        inode 33893     size: 4096      age: 0
+..       inode 33826     size: 4096      age: 0
+listaarquivo     inode 12222     size: 16336     age: 0
+listaarquivo.c   inode 33935     size: 1068      age: 0
+------------------------------------------------------------------------
+CONCLUSÃO
+
+Nesta primeira questão, conseguimos extrair facilmente os metadados dos arquivos usando a struct stat.
+Vimos na prática como recuperar o número do inode, o tamanho e a data, calculando a idade do arquivo com umas contas simples de tempo.
+O único porém foi o warning da função getwd(), mas é só usar funções mais atuais (como o getcwd) que ele é corrigido (não mudamos, pois a questão pede explicitamente para usar o arquivo do slide).
+------------------------------------------------------------------------
+
+
+2) Modifique o programa anterior para mostrar o número de links que cada arquivo possui.
+Depois, no diretório corrente, execute o o comando da shell ln <arquivo> <nomeLink> e veja o que mudou na saída de seu programa.
+------------------------------------------------------------------------
+ARQUIVO listaarquivo2.c
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
+#include <unistd.h>
+
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <sys/dir.h>
+#include <sys/param.h>
+
+char pathName[MAXPATHLEN];
+
+extern int alphasort();
+
+int main() {
+    int count;
+    struct direct **files;
+
+    if (getwd(pathName) == NULL) perror("Error while opening current dir");
+
+    count = scandir(pathName, &files, NULL, alphasort);
+    if (count <= 0) perror("No files in this directory");
+
+    printf("Number of files = %d\n", count);
+
+    for (int i = 0; i < count; i++) {
+        struct stat atributes;
+
+        if (stat(files[i]->d_name, &atributes) == 0) {
+            time_t now = time(NULL);
+
+            double time_passed = difftime(now, atributes.st_ctime);
+            int days_passed = time_passed / (60 * 60 * 24);
+            
+            printf("%s \t inode %lu \t size: %ld \t age: %d \t num. links: %ld\n", 
+                files[i]->d_name, 
+                (unsigned long)atributes.st_ino, 
+                atributes.st_size, 
+                days_passed,
+                atributes.st_nlink
+            );
+        }
+    }
+
+    return 0;
+}
+------------------------------------------------------------------------
+COMPILAÇÃO E EXECUÇÃO
+
+$ gcc -Wall -o listaarquivo2 listaarquivo2.c && ./listaarquivo2
+$ ln listaarquivo2.c meulink.c && ./listaarquivo2
+------------------------------------------------------------------------
+RESULTADO
+
+PRIMEIRO COMANDO
+listaarquivo2.c: In function ‘main’:
+listaarquivo2.c:19:5: warning: ‘getwd’ is deprecated [-Wdeprecated-declarations]
+   19 |     if (getwd(pathName) == NULL) perror("Error while opening current dir");
+      |     ^~
+In file included from listaarquivo2.c:4:
+/usr/include/unistd.h:545:14: note: declared here
+  545 | extern char *getwd (char *__buf)
+      |              ^~~~~
+/usr/bin/ld: /tmp/ccKzIPQ7.o: in function `main':
+listaarquivo2.c:(.text+0x29): warning: the `getwd' function is dangerous and should not be used.
+Number of files = 4
+.        inode 33936     size: 4096      age: 0        num. links: 2
+..       inode 33826     size: 4096      age: 0        num. links: 6
+listaarquivo2    inode 14091     size: 16336     age: 0         num. links: 1
+listaarquivo2.c          inode 34786     size: 1135    age: 0   num. links: 1
+
+SEGUNDO COMANDO
+Number of files = 5
+.        inode 33936     size: 4096      age: 0        num. links: 2
+..       inode 33826     size: 4096      age: 0        num. links: 6
+listaarquivo2    inode 14091     size: 16336     age: 0         num. links: 1
+listaarquivo2.c          inode 34786     size: 1135    age: 0   num. links: 2
+meulink.c        inode 34786     size: 1135      age: 0         num. links: 2
+------------------------------------------------------------------------
+CONCLUSÃO
+
+Com essa pequena modificação no código anterior, pudemos observar a quantidade de hard links de cada arquivo.
+Percebemos que arquivos normais geralmente nascem com 1 link, enquanto diretórios têm mais.
+Ao rodar o comando 'ln' no terminal, podemos ver o nosso programa capturando a mudança em tempo real: o contador de links do arquivo aumentou, mostrando-nos na prática que criar um hard link é só criar um "novo nome" que aponta para o mesmo inode, sem duplicar os dados no disco.
+------------------------------------------------------------------------
+
+
+3) Escreva um programa que percorre recursivamente um diretório, a partir do diretório corrente, somando o tamanho de todos os arquivos encontrados.
+------------------------------------------------------------------------
+ARQUIVO teste/ola.txt
+
+idwahnubiua
+wdahbdwyiuag8yui
+
+ARQUIVO listaSubDir.c
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+#include <unistd.h>
+
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <sys/dir.h>
+#include <sys/param.h>
+#include <dirent.h>
+
+char pathName[MAXPATHLEN];
+
+extern int alphasort();
+
+long long sumSubDir(const char *dirName) {
+    DIR *dir;
+    struct dirent *entry;
+    struct stat atributes;
+    
+    long long totalSize = 0;
+    char path[MAXPATHLEN];
+
+    dir = opendir(dirName);
+    if (dir == NULL) perror("Error while opening the directory");
+
+    while ((entry = readdir(dir)) != NULL) {
+        if (strcmp(".", entry->d_name) == 0 || strcmp("..", entry->d_name) == 0) continue;
+        
+        snprintf(path, sizeof(path), "%s/%s", dirName, entry->d_name);
+        
+        if (stat(path, &atributes) == -1) perror("Error while opening the file");
+        
+        if (entry->d_type == DT_DIR) totalSize += sumSubDir(path);
+        else if (entry->d_type == DT_REG) totalSize += atributes.st_size;
+    }
+
+    closedir(dir);
+    return totalSize;
+}
+
+int main() {
+    printf("Soma dos tamanhos de todos os arquivos: %lld\n", sumSubDir("."));
+
+    return 0;
+}
+------------------------------------------------------------------------
+COMPILAÇÃO E EXECUÇÃO
+
+$ gcc -Wall -o listaSubDir listaSubDir.c && ./listaSubDir
+------------------------------------------------------------------------
+RESULTADO
+
+Soma dos tamanhos de todos os arquivos: 33907
+------------------------------------------------------------------------
+CONCLUSÃO
+
+Nesta questão, mudamos a estratégia e usamos opendir() e readdir() para lidar com a estrutura de árvore do sistema de arquivos.
+Implementando uma recursão simples, conseguimos fazer o programa mergulhar sozinho em todos os subdiretórios.
+Um ponto chave aqui foi usar o snprintf() para colar o nome do diretório com o nome do arquivo, garantindo que o stat() achasse o arquivo certinho em qualquer nível da pasta.
+------------------------------------------------------------------------
+
+
+4) Modifique o programa anterior para mostrar recursivamente os diretórios e arquivos aninhados.
+Dica: use printf(“%*s[%s]\n”,level, “”,entry->dname) para imprimir com a identação correspondente ao nivel de recursão.
+------------------------------------------------------------------------
+ARQUIVO teste/ola.txt
+
+Ola
+
+ARQUIVO teste/oi/code.c
+
+int main() {
+    return 0;
+}
+
+ARQUIVO listasubdir.c
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+#include <unistd.h>
+
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <sys/dir.h>
+#include <sys/param.h>
+#include <dirent.h>
+
+char pathName[MAXPATHLEN];
+
+extern int alphasort();
+
+long long sumSubDir(const char *dirName, int level) {
+    DIR *dir;
+    struct dirent *entry;
+    struct stat atributes;
+    
+    long long totalSize = 0;
+    char path[MAXPATHLEN];
+
+    dir = opendir(dirName);
+    if (dir == NULL) perror("Error while opening the directory");
+
+    while ((entry = readdir(dir)) != NULL) {
+        if (strcmp(".", entry->d_name) == 0 || strcmp("..", entry->d_name) == 0) continue;
+        
+        snprintf(path, sizeof(path), "%s/%s", dirName, entry->d_name);
+        
+        if (stat(path, &atributes) == -1) perror("Error while opening the file");
+        
+        printf("%*s[%s]\n",
+            level * 4,
+            "",
+            entry->d_name
+        );
+        
+        if (entry->d_type == DT_DIR) totalSize += sumSubDir(path, level + 1);
+        else if (entry->d_type == DT_REG) totalSize += atributes.st_size;
+    }
+
+    closedir(dir);
+    return totalSize;
+}
+
+int main() {
+    printf("[root]\n");
+    long long total = sumSubDir(".", 1);
+
+    printf("Soma dos tamanhos de todos os arquivos: %lld\n", total);
+
+    return 0;
+}
+------------------------------------------------------------------------
+COMPILAÇÃO E EXECUÇÃO
+
+$ gcc -Wall -o listasubdir listasubdir.c && ./listasubdir
+------------------------------------------------------------------------
+RESULTADO
+
+[root]
+    [listasubdir]
+    [listasubdir.c]
+    [teste]
+        [ola.txt]
+        [oi]
+            [code.c]
+Soma dos tamanhos de todos os arquivos: 17782
+------------------------------------------------------------------------
+CONCLUSÃO
+
+Aproveitando toda a lógica recursiva que já tínhamos feito na questão 3, aqui o desafio foi só mexer com a formatação.
+Usar o '%*s' no printf permitiu criar uma representação visual super clara e identada da hierarquia das pastas, bem parecido com aquele comando 'tree' do Linux.
+Fechou o laboratório deixando muito mais fácil de entender como o sistema operacional se organiza nos bastidores.
